@@ -1,13 +1,12 @@
-author: Platon
-title: Das Gastmahl
-book-index: null
+author: Rudolf Steiner
+title: Einleitungen zu Goethes Naturwissenschaftlichen Schriften
+book-index: '1'
 original:
-  - type: text
-  - size: 153698
-text-before-first-chapter: (Symposion)
-text-after-last-chapter: ''
-first-author-content-page: null
-last-author-content-page: null
+  - type: pdf-text-ocr
+  - size: 15916374
+  - pages: 350
+text-before-first-chapter: "müsse, um ihm erkennend beizukommen."
+text-after-last-chapter: "Daten zur Herausgabe von Goethes"
 header-type:
   - level1:
       - format: null
@@ -40,4 +39,4 @@ footnotes:
   - five-words-before: null
   - footnote:
       - text first page
-      - text next page
+      - text next page 

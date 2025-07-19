@@ -3,16 +3,15 @@ title:
 book-index:
 original:
   - type: pdf-text | pdf-ocr | pdf-text-ocr | text | epub
-  - size: MB
-
+  - size: 
+  - pages:
 text-before-first-chapter:
 text-after-last-chapter:
-first-page:
-last-page:
 
 header-type:
   - level1:
     - format:
+    - example:
 
 structure:
   - type: chapter
