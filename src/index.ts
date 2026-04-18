@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { program } from 'commander';
 import { CleanBookCommand } from '@/cli/CleanBookCommand';
-import { APP_NAME, APP_VERSION, ENV_VARS, LOG_LEVELS } from '@/constants';
+import { ENV_VARS, LOG_LEVELS } from '@/constants';
 import { createDefaultLoggerService } from '@/services/LoggerService';
 import type { LogLevel } from '@/types';
 import { AppError } from '@/utils/AppError';
@@ -66,37 +65,16 @@ async function main(): Promise<void> {
             process.exit(0);
         });
 
-        // Configure the main program
-        program
-            .name(APP_NAME.toLowerCase().replace(/\s+/g, '-'))
-            .description(
-                'Transform raw book sources into clean, readable Markdown with comprehensive metadata',
-            )
-            .version(APP_VERSION);
-
-        // Create and register the clean-book command
+        // The clean-book command IS the root program — no subcommand wrapper.
+        // The bin is named `clean-book` and takes `<input-file>` directly.
         const cleanBookCommand = new CleanBookCommand();
-        program.addCommand(cleanBookCommand.createCommand());
+        const program = cleanBookCommand.createCommand();
 
-        // Add help command
-        program
-            .command('help [command]')
-            .description('Display help for a command')
-            .action((command) => {
-                if (command) {
-                    program.help();
-                } else {
-                    program.help();
-                }
-            });
-
-        // Parse command line arguments
-        await program.parseAsync(process.argv);
-
-        // If no command was provided, show help
         if (process.argv.length <= 2) {
             program.help();
         }
+
+        await program.parseAsync(process.argv);
     } catch (error) {
         // Handle known application errors
         if (error instanceof AppError) {

@@ -10,7 +10,7 @@ packageJson = { version: '0.1.0' };
 export const APP_NAME = 'Book Cleaner CLI';
 export const APP_VERSION = packageJson.version;
 export const APP_DESCRIPTION =
-    'Transform raw book sources into clean, readable Markdown with comprehensive metadata';
+    'Transform raw book sources (PDF/EPUB/TXT) into clean, readable Markdown. Runs deterministic text cleanup before calling a local Ollama model for structure inference.';
 
 // ==================== File and Format Constants ====================
 

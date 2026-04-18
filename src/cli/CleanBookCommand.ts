@@ -141,6 +141,49 @@ export class CleanBookCommand {
                 `-${CLI_ALIASES[CLI_OPTIONS.INFER_TEXT]}, --${CLI_OPTIONS.INFER_TEXT} <filename>`,
                 'Path to text file for structure inference',
             )
+            .addHelpText(
+                'after',
+                `
+Filename convention:
+  Input files should follow <author>#<title>[#<book-index>].<ext>
+  Examples:
+    Rudolf_Steiner#Goethes_Naturwissenschaftliche_Schriften#GA_1.pdf
+    Jane_Doe#Sample_Book.epub
+
+Pipeline:
+  1. File-format detection and validation
+  2. Text extraction (embedded text + Tesseract OCR for image PDFs)
+  3. Deterministic cleanup via TextCleanerService
+     (Unicode normalization, ligatures, page numbers, hyphen rejoining,
+      repeated header/footer removal, paragraph rewrap)
+  4. Book-structure inference via a local Ollama model
+  5. Structure normalization / footnote handling / OCR QC
+
+Environment variables:
+  OLLAMA_BASE_URL   Ollama endpoint (default http://localhost:11434/v1)
+  OLLAMA_MODEL      Model tag       (default qwen3:32b)
+  OLLAMA_NUM_CTX    Context tokens  (default 32768)
+  LOG_LEVEL         debug | info | warn | error | fatal
+  OUTPUT_DIR        Default output directory
+  CONFIG_DIR        Configuration directory
+
+Prerequisites:
+  - Node version matching .nvmrc
+  - Ollama running locally (https://ollama.com)
+  - Model pulled, e.g. \`ollama pull qwen3:32b\`
+
+Examples:
+  clean-book -b google-play-ebook Jane_Doe#Sample_Book.epub
+  clean-book -b rudolf-steiner-ga-werk Rudolf_Steiner#GA_1.pdf
+  clean-book -v -l debug -b rudolf-steiner-ga-vortrag Author#Title.pdf
+  OLLAMA_MODEL=llama3.1:8b clean-book -b google-play-ebook book.pdf
+
+More:
+  README.md                         pipeline + dev setup
+  src/services/TextCleanerService.md  deterministic cleanup passes
+  src/services/OllamaService.md       LLM client + retry behavior
+`,
+            )
             .action(async (inputFile: string, options: CommanderOptions) => {
                 await this.execute(inputFile, options);
             });
