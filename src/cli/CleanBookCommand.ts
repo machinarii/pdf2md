@@ -115,7 +115,7 @@ export class CleanBookCommand {
             )
             .option(
                 `-${CLI_ALIASES[CLI_OPTIONS.BOOK_TYPE]}, --${CLI_OPTIONS.BOOK_TYPE} <type>`,
-                `Book type (required): ${VALID_BOOK_TYPES.join(', ')}`,
+                `Book type (optional): ${VALID_BOOK_TYPES.join(', ')}. When omitted, all publisher text-removal patterns are applied (union of every type).`,
             )
             .option(
                 `-${CLI_ALIASES[CLI_OPTIONS.VERBOSE]}, --${CLI_OPTIONS.VERBOSE}`,
@@ -173,10 +173,10 @@ Prerequisites:
   - Model pulled, e.g. \`ollama pull qwen3:32b\`
 
 Examples:
-  clean-book -b google-play-ebook Jane_Doe#Sample_Book.epub
-  clean-book -b rudolf-steiner-ga-werk Rudolf_Steiner#GA_1.pdf
-  clean-book -v -l debug -b rudolf-steiner-ga-vortrag Author#Title.pdf
-  OLLAMA_MODEL=llama3.1:8b clean-book -b google-play-ebook book.pdf
+  clean-book some-report.pdf                         # no -b → apply all patterns
+  clean-book -b google-play-ebook Jane_Doe#Book.epub # google-play preset
+  clean-book -v -l debug Author#Title.pdf
+  OLLAMA_MODEL=llama3.1:8b clean-book book.pdf
 
 More:
   README.md                         pipeline + dev setup
@@ -348,27 +348,16 @@ More:
         inputFile: string,
         options: CommanderOptions,
     ): Promise<CLIOptions> {
-        // Validate required book type
-        if (!options.bookType) {
-            console.error('\n❌ Error: Book type is required\n');
-            console.error('Available book types:');
-            for (const type of VALID_BOOK_TYPES) {
-                console.error(`  - ${type}`);
-            }
-            console.error('\nUsage: clean-book -b <book-type> <input-file>');
-            console.error('Example: clean-book -b rudolf-steiner-ga-werk input.pdf\n');
-            process.exit(1);
-        }
-
-        // Validate book type is valid
-        if (!VALID_BOOK_TYPES.includes(options.bookType)) {
+        // Book type is optional. When provided, validate; when absent, pass an
+        // empty string so downstream code runs the union of every type's
+        // text-removal patterns.
+        if (options.bookType && !VALID_BOOK_TYPES.includes(options.bookType)) {
             console.error(`\n❌ Error: Invalid book type "${options.bookType}"\n`);
             console.error('Available book types:');
             for (const type of VALID_BOOK_TYPES) {
                 console.error(`  - ${type}`);
             }
-            console.error('\nUsage: clean-book -b <book-type> <input-file>');
-            console.error('Example: clean-book -b rudolf-steiner-ga-werk input.pdf\n');
+            console.error('\nOmit -b entirely to apply all text-removal patterns.\n');
             process.exit(1);
         }
 
@@ -380,7 +369,7 @@ More:
             outputDir: options.outputDir
                 ? path.resolve(options.outputDir)
                 : path.resolve(DEFAULT_OUTPUT_DIR),
-            bookType: options.bookType,
+            bookType: options.bookType ?? '',
             verbose: options.verbose || options.debug,
             debug: options.debug,
             logLevel: options.logLevel as LogLevel,

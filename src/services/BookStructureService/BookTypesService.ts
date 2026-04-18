@@ -91,44 +91,59 @@ export class BookTypesService {
     }
 
     /**
-     * Get text-removal-patterns for a specific book type
+     * Get text-removal-patterns.
+     *
+     * - When `bookType` is a known type, returns that type's patterns.
+     * - When `bookType` is empty or unknown, returns the **union** of every
+     *   type's patterns (deduplicated) so a single pass strips boilerplate
+     *   from any publisher. The `default` entry — which is typically empty
+     *   and acts as a schema placeholder — is excluded.
      */
-    public async getTextRemovalPatterns(bookType: string): Promise<string[]> {
+    public async getTextRemovalPatterns(bookType?: string): Promise<string[]> {
         const bookTypes = await this.loadBookTypes();
-        const typeConfig = bookTypes[bookType];
 
-        if (!typeConfig) {
-            const configLogger = this.logger.getConfigLogger(
-                LOG_COMPONENTS.CONFIG_SERVICE,
-            );
-            configLogger.warn(
-                { bookType, availableTypes: Object.keys(bookTypes) },
-                'Unknown book type, falling back to default',
-            );
-
-            // Fall back to default if it exists
-            const defaultConfig = bookTypes.default;
-            return defaultConfig?.['text-removal-patterns'] || [];
+        if (bookType && bookTypes[bookType]) {
+            return bookTypes[bookType]['text-removal-patterns'] || [];
         }
 
-        return typeConfig['text-removal-patterns'] || [];
+        const configLogger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
+        if (bookType) {
+            configLogger.warn(
+                { bookType, availableTypes: Object.keys(bookTypes) },
+                'Unknown book type, applying union of all text-removal patterns',
+            );
+        } else {
+            configLogger.info(
+                { availableTypes: Object.keys(bookTypes) },
+                'No book type specified, applying union of all text-removal patterns',
+            );
+        }
+
+        const seen = new Set<string>();
+        for (const [typeName, typeConfig] of Object.entries(bookTypes)) {
+            if (typeName === 'default') continue;
+            for (const pattern of typeConfig['text-removal-patterns'] || []) {
+                seen.add(pattern);
+            }
+        }
+        return Array.from(seen);
     }
 
     /**
-     * Get header type configuration for a specific book type
+     * Get header type configuration for a specific book type. Returns null
+     * when no book type is specified (no publisher-specific heading rules to
+     * apply — callers should fall back to generic heading detection).
      */
     public async getHeaderTypeConfig(
-        bookType: string,
+        bookType?: string,
     ): Promise<HeaderTypeConfig | null> {
+        if (!bookType) return null;
         const bookTypes = await this.loadBookTypes();
         const typeConfig = bookTypes[bookType];
-
         if (!typeConfig) {
-            // Fall back to default if it exists
             const defaultConfig = bookTypes.default;
             return defaultConfig?.['header-type'] || null;
         }
-
         return typeConfig['header-type'] || null;
     }
 

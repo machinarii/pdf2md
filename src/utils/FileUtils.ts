@@ -96,31 +96,41 @@ export class FileUtils {
         // Remove file extension for parsing
         const nameWithoutExt = path.basename(filename, path.extname(filename));
 
-        // Match pattern: author#title[#bookIndex]
+        // Match pattern: author#title[#bookIndex]. When the filename doesn't
+        // follow the convention, fall back to author="Unknown" and treat the
+        // whole base name as the title. Keeps the CLI usable for ad-hoc PDFs
+        // without forcing users to rename files.
         const match = nameWithoutExt.match(VALIDATION_PATTERNS.FILENAME_METADATA);
 
-        if (!match) {
-            throw new AppError(
-                ERROR_CODES.VALIDATION_ERROR,
-                LOG_COMPONENTS.FILE_HANDLER,
-                'parseFilename',
-                ERROR_MESSAGES[ERROR_CODES.VALIDATION_ERROR].replace(
-                    '{field}',
-                    'filename format',
-                ),
+        let author: string;
+        let title: string;
+        let bookIndex: string | undefined;
+        if (match) {
+            [, author, title, bookIndex] = match as unknown as [
+                string,
+                string,
+                string,
+                string | undefined,
+            ];
+        } else {
+            fileLogger.warn(
                 {
                     filename,
                     expectedPattern: 'author#title[#bookIndex].extension',
                     actualPattern: nameWithoutExt,
                 },
+                'Filename does not match author#title convention; using fallback metadata',
             );
+            author = 'Unknown';
+            title = nameWithoutExt;
+            bookIndex = undefined;
         }
-
-        const [, author, title, bookIndex] = match;
 
         // Convert underscores to spaces
         const processedAuthor = author.replace(/_/g, ' ');
-        const processedTitle = title.replace(/_/g, ' ');
+        const processedTitle = title
+            .replace(/_/g, ' ')
+            .slice(0, VALIDATION_LIMITS.MAX_TITLE_LENGTH);
 
         // Validate lengths
         if (processedAuthor.length > VALIDATION_LIMITS.MAX_AUTHOR_LENGTH) {

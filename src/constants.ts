@@ -343,10 +343,11 @@ export const CLI_ALIASES = {
     [CLI_OPTIONS.LOG_ERRORS_TO_STDERR]: 'E',
 } as const;
 
-// Valid book types
+// Valid book types accepted by the `-b` CLI flag. The publisher-specific
+// text-removal patterns for Rudolf Steiner volumes still live in
+// book-artifacts/book-types.yaml and are applied in union mode when `-b` is
+// omitted; they're just no longer selectable by name.
 export const BOOK_TYPES = {
-    RUDOLF_STEINER_GA_WERK: 'rudolf-steiner-ga-werk',
-    RUDOLF_STEINER_GA_VORTRAG: 'rudolf-steiner-ga-vortrag',
     GOOGLE_PLAY_EBOOK: 'google-play-ebook',
 } as const;
 
