@@ -10,6 +10,7 @@ import type {
     ProgressCallback,
 } from '../types';
 import { AppError } from '../utils/AppError';
+import { getArtifactsDir } from '../utils/ArtifactsDir';
 import { FileUtils } from '../utils/FileUtils';
 import { AbstractPhase } from './AbstractPhase';
 import { FileFormatDetector } from './phase_1_Text_Extraction_And_Format_Processing/step_1_File_Format_Detection_And_Validation/FileFormatDetector';
@@ -42,7 +43,7 @@ export class DataLoadingPhase extends AbstractPhase {
         this.textExtractor = new TextExtractor(
             logger,
             configService,
-            './book-artifacts',
+            getArtifactsDir(),
             bookStructureService,
         );
         this.bookStructureAnalyzer = new BookStructureAnalyzer(logger);
@@ -198,7 +199,7 @@ export class DataLoadingPhase extends AbstractPhase {
 
             // Read the extracted text files
             const configKey = this.getConfigKey(metadata);
-            const bookArtifactsDir = './book-artifacts';
+            const bookArtifactsDir = getArtifactsDir();
             const bookDir = `${bookArtifactsDir}/${configKey}`;
             const phase1Dir = `${bookDir}/phase1`;
             const step2TxtPath = `${phase1Dir}/step2.txt`;

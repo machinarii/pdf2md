@@ -33,6 +33,7 @@ import type {
     ProgressInfo,
 } from '@/types';
 import { AppError, isAppError } from '@/utils/AppError';
+import { getArtifactsDir } from '@/utils/ArtifactsDir';
 import { cyan, getChalkInstance, gray, info, success, warn } from '@/utils/ChalkUtils';
 import { FileUtils } from '@/utils/FileUtils';
 
@@ -47,6 +48,7 @@ interface CommanderOptions {
     logLevel: string;
     skipStartMarker: boolean;
     inferText?: string;
+    keepArtifacts?: boolean;
 }
 
 /**
@@ -62,8 +64,9 @@ export class CleanBookCommand {
 
     constructor() {
         this.logger = createDefaultLoggerService();
-        this.configService = new ConfigService(this.logger);
-        this.bookStructureService = new BookStructureService(this.logger);
+        const artifactsDir = getArtifactsDir();
+        this.configService = new ConfigService(this.logger, artifactsDir);
+        this.bookStructureService = new BookStructureService(this.logger, artifactsDir);
         this.fileUtils = new FileUtils(this.logger);
         this.pipelineManager = new PipelineManager(this.logger);
 
@@ -140,6 +143,11 @@ export class CleanBookCommand {
             .option(
                 `-${CLI_ALIASES[CLI_OPTIONS.INFER_TEXT]}, --${CLI_OPTIONS.INFER_TEXT} <filename>`,
                 'Path to text file for structure inference',
+            )
+            .option(
+                '--keep-artifacts',
+                'Preserve book-artifacts/<book>/ after a successful run (default: deleted once the cleaned .md is written next to the source)',
+                false,
             )
             .addHelpText(
                 'after',
@@ -322,9 +330,16 @@ More:
 
             const result = await this.pipelineManager.execute(pipelineConfig, metadata);
 
-            // Report success
+            const writtenPath = await this.finalizeOutput(
+                cliOptions.inputFile,
+                metadata,
+                options.keepArtifacts ?? false,
+            );
+
             await success('✓ Book cleaning completed successfully!');
-            await info(`Output directory: ${pipelineConfig.outputDir}`);
+            if (writtenPath) {
+                await info(`Output: ${writtenPath}`);
+            }
             await info(
                 `Processing time: ${this.formatDuration(result.startTime, result.endTime)}`,
             );
@@ -643,6 +658,80 @@ More:
             const status = phaseResult.status === 'completed' ? '✓' : '✗';
             await info(`  ${status} ${phaseResult.name}: ${duration}`);
         }
+    }
+
+    /**
+     * Write the final cleaned text next to the source file and (unless the
+     * user passed `--keep-artifacts`) remove the per-book artifacts dir.
+     *
+     * Picks the most-processed artifact available:
+     *   1. `phase1/step3.txt` — post Ollama structure inference
+     *   2. `phase1/step2-cleaned.ocr` — post TextCleanerService, OCR path
+     *   3. `phase1/step2-cleaned.txt` — post TextCleanerService
+     *   4. `phase1/step2.ocr` / `step2.txt` — raw extraction
+     */
+    private async finalizeOutput(
+        inputFile: string,
+        metadata: FilenameMetadata,
+        keepArtifacts: boolean,
+    ): Promise<string | null> {
+        const fs = await import('node:fs/promises');
+        const configKey = FileUtils.generateConfigKey(metadata);
+        const artifactsDir = getArtifactsDir();
+        const bookDir = path.join(artifactsDir, configKey);
+        const phase1Dir = path.join(bookDir, 'phase1');
+
+        const candidates = [
+            path.join(phase1Dir, 'step3.txt'),
+            path.join(phase1Dir, 'step2-cleaned.ocr'),
+            path.join(phase1Dir, 'step2-cleaned.txt'),
+            path.join(phase1Dir, 'step2.ocr'),
+            path.join(phase1Dir, 'step2.txt'),
+        ];
+
+        let cleanedText: string | null = null;
+        for (const candidate of candidates) {
+            try {
+                cleanedText = await fs.readFile(candidate, 'utf-8');
+                break;
+            } catch {
+                // try next candidate
+            }
+        }
+
+        if (cleanedText === null) {
+            await warn('No cleaned output found in artifacts — nothing to write.');
+            return null;
+        }
+
+        const sourceDir = path.dirname(path.resolve(inputFile));
+        const baseName = path.basename(inputFile, path.extname(inputFile));
+        const outputPath = path.join(sourceDir, `${baseName}.md`);
+
+        try {
+            await fs.writeFile(outputPath, cleanedText, 'utf-8');
+        } catch (error) {
+            await warn(
+                `Failed to write output next to source (${outputPath}): ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+            return null;
+        }
+
+        if (!keepArtifacts) {
+            try {
+                await fs.rm(bookDir, { recursive: true, force: true });
+            } catch (error) {
+                await warn(
+                    `Output written but failed to delete artifacts at ${bookDir}: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                );
+            }
+        }
+
+        return outputPath;
     }
 
     /**
