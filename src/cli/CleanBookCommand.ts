@@ -11,7 +11,6 @@ import {
     LOG_COMPONENTS,
     LOG_LEVELS,
     PIPELINE_PHASES,
-    VALID_BOOK_TYPES,
 } from '@/constants';
 import { AIEnhancementsPhase } from '@/pipeline/AIEnhancementsPhase';
 import { DataLoadingPhase } from '@/pipeline/DataLoadingPhase';
@@ -42,7 +41,6 @@ import { FileUtils } from '@/utils/FileUtils';
 // Commander.js option types (following .cursorrules #5 - no any keyword)
 interface CommanderOptions {
     outputDir: string;
-    bookType: string;
     verbose: boolean;
     debug: boolean;
     logLevel: string;
@@ -117,10 +115,6 @@ export class CleanBookCommand {
                 DEFAULT_OUTPUT_DIR,
             )
             .option(
-                `-${CLI_ALIASES[CLI_OPTIONS.BOOK_TYPE]}, --${CLI_OPTIONS.BOOK_TYPE} <type>`,
-                `Book type (optional): ${VALID_BOOK_TYPES.join(', ')}. When omitted, all publisher text-removal patterns are applied (union of every type).`,
-            )
-            .option(
                 `-${CLI_ALIASES[CLI_OPTIONS.VERBOSE]}, --${CLI_OPTIONS.VERBOSE}`,
                 'Enable verbose logging',
                 false,
@@ -181,10 +175,11 @@ Prerequisites:
   - Model pulled, e.g. \`ollama pull qwen3:32b\`
 
 Examples:
-  clean-book some-report.pdf                         # no -b → apply all patterns
-  clean-book -b google-play-ebook Jane_Doe#Book.epub # google-play preset
+  clean-book some-report.pdf
   clean-book -v -l debug Author#Title.pdf
+  clean-book -s anything.pdf                    # skip boundary prompt
   OLLAMA_MODEL=llama3.1:8b clean-book book.pdf
+  clean-book --keep-artifacts Author#Title.pdf  # preserve intermediates
 
 More:
   README.md                         pipeline + dev setup
@@ -224,10 +219,15 @@ More:
                     await this.bookStructureService.loadBookManifest(metadata);
                 console.log('✅ Existing manifest loaded successfully');
 
-                // Check if text boundaries are missing and prompt for them
+                // Check if text boundaries are missing and prompt for them.
+                // Skipped when --skip-start-marker is set or when stdin is not
+                // a TTY (piped / non-interactive shell).
+                const canPrompt = process.stdin.isTTY === true;
                 if (
-                    !bookManifest.textBeforeFirstChapter ||
-                    !bookManifest.textAfterLastChapter
+                    !cliOptions.skipStartMarker &&
+                    canPrompt &&
+                    (!bookManifest.textBeforeFirstChapter ||
+                        !bookManifest.textAfterLastChapter)
                 ) {
                     console.log('📝 Text boundaries missing, prompting for them...');
                     const { textBeforeFirstChapter, textAfterLastChapter } =
@@ -270,32 +270,44 @@ More:
                     );
                     console.log('✅ Book structure created');
 
-                    // Prompt for text boundaries
-                    console.log('📝 Prompting for text boundaries...');
-                    const { textBeforeFirstChapter, textAfterLastChapter } =
-                        await this.promptForTextBoundaries();
-                    console.log('✅ Text boundaries received:', {
-                        textBeforeFirstChapter,
-                        textAfterLastChapter,
-                    });
+                    // Prompt for text boundaries unless --skip-start-marker is set
+                    // or stdin is not a TTY.
+                    const canPrompt = process.stdin.isTTY === true;
+                    if (!cliOptions.skipStartMarker && canPrompt) {
+                        console.log('📝 Prompting for text boundaries...');
+                        const { textBeforeFirstChapter, textAfterLastChapter } =
+                            await this.promptForTextBoundaries();
+                        console.log('✅ Text boundaries received:', {
+                            textBeforeFirstChapter,
+                            textAfterLastChapter,
+                        });
 
-                    // Update the manifest with the boundaries
-                    console.log('💾 Updating manifest with boundaries...');
-                    await this.bookStructureService.updateBookManifest(metadata, {
-                        textBeforeFirstChapter,
-                        textAfterLastChapter,
-                    });
-                    console.log('✅ Manifest updated');
+                        console.log('💾 Updating manifest with boundaries...');
+                        await this.bookStructureService.updateBookManifest(metadata, {
+                            textBeforeFirstChapter,
+                            textAfterLastChapter,
+                        });
+                        console.log('✅ Manifest updated');
 
-                    // Reload the manifest to get the updated version
-                    console.log('🔄 Reloading manifest...');
-                    bookManifest =
-                        await this.bookStructureService.loadBookManifest(metadata);
-                    console.log('✅ Manifest reloaded');
+                        console.log('🔄 Reloading manifest...');
+                        bookManifest =
+                            await this.bookStructureService.loadBookManifest(metadata);
+                        console.log('✅ Manifest reloaded');
 
-                    cliLogger.info(
-                        'Book manifest created successfully with text boundaries',
-                    );
+                        cliLogger.info(
+                            'Book manifest created successfully with text boundaries',
+                        );
+                    } else {
+                        cliLogger.info(
+                            {
+                                inputFile: cliOptions.inputFile,
+                                reason: cliOptions.skipStartMarker
+                                    ? 'skip-start-marker'
+                                    : 'non-interactive stdin',
+                            },
+                            'Skipping text-boundary prompt; processing whole file',
+                        );
+                    }
                 } else {
                     console.log('❌ Unexpected error, rethrowing...');
                     throw error;
@@ -363,19 +375,6 @@ More:
         inputFile: string,
         options: CommanderOptions,
     ): Promise<CLIOptions> {
-        // Book type is optional. When provided, validate; when absent, pass an
-        // empty string so downstream code runs the union of every type's
-        // text-removal patterns.
-        if (options.bookType && !VALID_BOOK_TYPES.includes(options.bookType)) {
-            console.error(`\n❌ Error: Invalid book type "${options.bookType}"\n`);
-            console.error('Available book types:');
-            for (const type of VALID_BOOK_TYPES) {
-                console.error(`  - ${type}`);
-            }
-            console.error('\nOmit -b entirely to apply all text-removal patterns.\n');
-            process.exit(1);
-        }
-
         // Note: infer-text file validation will be done during processing
         // to allow the step to be omitted if the file doesn't exist
 
@@ -384,7 +383,7 @@ More:
             outputDir: options.outputDir
                 ? path.resolve(options.outputDir)
                 : path.resolve(DEFAULT_OUTPUT_DIR),
-            bookType: options.bookType ?? '',
+            bookType: '',
             verbose: options.verbose || options.debug,
             debug: options.debug,
             logLevel: options.logLevel as LogLevel,

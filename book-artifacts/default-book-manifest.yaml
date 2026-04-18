@@ -5,7 +5,6 @@ original:
   format: pdf-text | pdf-ocr | pdf-text-ocr | text | epub
   size: 
   pages:
-  book-type: default | rudolf-steiner-ga-werk | rudolf-steiner-ga-vortrag | google-play-ebook
 text-before-first-chapter:
 text-after-last-chapter:
 book-structure:

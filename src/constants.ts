@@ -317,7 +317,6 @@ export const CLI_COMMANDS = {
 export const CLI_OPTIONS = {
     INPUT_FILE: 'input-file',
     OUTPUT_DIR: 'output-dir',
-    BOOK_TYPE: 'book-type',
     VERBOSE: 'verbose',
     DEBUG: 'debug',
     LOG_LEVEL: 'log-level',
@@ -331,7 +330,6 @@ export const CLI_OPTIONS = {
 
 export const CLI_ALIASES = {
     [CLI_OPTIONS.OUTPUT_DIR]: 'o',
-    [CLI_OPTIONS.BOOK_TYPE]: 'b',
     [CLI_OPTIONS.VERBOSE]: 'v',
     [CLI_OPTIONS.DEBUG]: 'd',
     [CLI_OPTIONS.LOG_LEVEL]: 'l',
@@ -342,16 +340,6 @@ export const CLI_ALIASES = {
     [CLI_OPTIONS.ERROR_OUTPUT_FORMAT]: 'f',
     [CLI_OPTIONS.LOG_ERRORS_TO_STDERR]: 'E',
 } as const;
-
-// Valid book types accepted by the `-b` CLI flag. The publisher-specific
-// text-removal patterns for Rudolf Steiner volumes still live in
-// book-artifacts/book-types.yaml and are applied in union mode when `-b` is
-// omitted; they're just no longer selectable by name.
-export const BOOK_TYPES = {
-    GOOGLE_PLAY_EBOOK: 'google-play-ebook',
-} as const;
-
-export const VALID_BOOK_TYPES = Object.values(BOOK_TYPES) as readonly string[];
 
 // Error output formats
 export const ERROR_OUTPUT_FORMATS = {
