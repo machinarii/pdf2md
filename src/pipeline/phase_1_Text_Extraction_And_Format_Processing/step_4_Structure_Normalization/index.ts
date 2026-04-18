@@ -10,15 +10,14 @@
  * TODO: Full implementation coming in Phase 2 of development
  */
 
-// Export the main processing classes
-export { ChapterRecognizer } from './ChapterRecognizer';
-
 // Export interfaces
 export type {
-    ChapterRecognitionResult,
     Chapter,
     ChapterRecognitionOptions,
+    ChapterRecognitionResult,
 } from './ChapterRecognizer';
+// Export the main processing classes
+export { ChapterRecognizer } from './ChapterRecognizer';
 
 // Export execution summary types and functions
 export type { Step1_4ExecutionSummary } from './ExecutionSummary';

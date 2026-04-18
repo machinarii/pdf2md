@@ -1,3 +1,4 @@
+import type pino from 'pino';
 import {
     ERROR_CODES,
     FOOTNOTE_FORMATS,
@@ -15,8 +16,6 @@ import type {
     PageMetricsData,
 } from '@/types';
 import { AppError } from '@/utils/AppError';
-import { removeOcrGarbage } from '@/utils/TextUtils';
-import type pino from 'pino';
 import { detectFootnoteStartFromOcr } from './detectFootnotesFromOcr';
 import { detectAndProcessHeaders } from './detectHeadersFromOcr';
 
@@ -74,7 +73,6 @@ interface ProcessedTextResult extends ScanResults {
 export class GetTextAndStructureFromOcr {
     private readonly logger: pino.Logger;
     private readonly configService: ConfigService;
-    private readonly bookManifest?: BookManifestInfo;
     private bookTypeConfigCache: Map<string, BookTypeConfig> = new Map();
 
     constructor(
@@ -200,7 +198,7 @@ export class GetTextAndStructureFromOcr {
 
         for (let lineIndex = 0; lineIndex < allLines.length; lineIndex++) {
             const line = allLines[lineIndex];
-            if (!line || !line.bbox) {
+            if (!line?.bbox) {
                 continue;
             }
 

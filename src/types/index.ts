@@ -62,7 +62,12 @@ export interface PipelineState {
     results: PhaseResult[];
 }
 
-export type PipelineStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type PipelineStatus =
+    | 'pending'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
 
 export interface PhaseResult {
     phase: number;
@@ -318,7 +323,10 @@ export interface EPUBData {
         href: string;
     }>;
     on: (event: string, callback: (error?: Error) => void) => void;
-    getChapter: (chapterId: string, callback: (error: Error | null, text?: string) => void) => void;
+    getChapter: (
+        chapterId: string,
+        callback: (error: Error | null, text?: string) => void,
+    ) => void;
     parse: () => void;
 }
 
@@ -447,13 +455,10 @@ export interface QualityConfig {
     failOnLowQuality: boolean;
 }
 
-export type AIProvider = 'deepseek' | 'openai' | 'anthropic';
-
 export interface AIConfig {
-    provider: AIProvider;
+    baseUrl: string;
     model: string;
-    apiKey: string;
-    baseUrl?: string;
+    numCtx: number;
     temperature: number;
     maxTokens: number;
     retries: number;

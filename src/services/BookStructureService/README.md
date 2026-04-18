@@ -12,7 +12,7 @@ This directory contains all services related to book structure management, analy
 - Create and update book structure files
 - Validate book structure entries
 - Compare structure entries for similarity
-- **NEW**: AI-powered structure inference using DeepSeek Chat
+- **NEW**: AI-powered structure inference using Ollama
 
 **Key Methods**:
 - `loadBookManifest()` - Load and cache book manifest
@@ -58,14 +58,14 @@ This directory contains all services related to book structure management, analy
 **Purpose**: AI-powered service for structure inference and correction.
 
 **Key Responsibilities**:
-- Generate DeepSeek Chat prompts for structure analysis
+- Generate Ollama prompts for structure analysis
 - Process AI responses for structure matching
 - Handle text chunking and response merging
 - Manage structure corrections and new entries
 
 **Key Methods**:
 - `inferStructureFromChunk()` - Process text chunk with AI
-- `generatePrompt()` - Create DeepSeek Chat prompts
+- `generatePrompt()` - Create Ollama prompts
 - `parseAIResponse()` - Parse and validate AI responses
 - `mergeChunkResponses()` - Merge multiple chunk results
 - `validateOptions()` - Validate inference configuration
@@ -86,7 +86,7 @@ BookStructureService/
 
 ### Internal Dependencies
 - `TextChunker` - For text chunking in AI inference
-- `DeepSeekService` - For AI API integration
+- `OllamaService` - For local LLM API integration
 - `LoggerService` - For structured logging
 - `ConfigService` - For configuration management
 
@@ -152,8 +152,9 @@ These services are integrated into the book cleaning pipeline:
 ## Configuration
 
 ### Environment Variables
-- `DEEPSEEK_REST_API_KEY` - DeepSeek Chat API key
-- `DEEPSEEK_REST_API_URI` - DeepSeek Chat API endpoint
+- `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default `http://localhost:11434/v1`)
+- `OLLAMA_MODEL` - Model name (default `qwen3:32b`)
+- `OLLAMA_NUM_CTX` - Context window in tokens (default `32768`)
 
 ### Configuration Files
 - `book-artifacts/default-book-manifest.yaml` - Default manifest template
@@ -165,7 +166,7 @@ These services are integrated into the book cleaning pipeline:
 All services follow the project's error handling patterns:
 - Use `AppError` for application-specific errors
 - Include context and cause chaining
-- Exit application on DeepSeek API failures (per project rules)
+- Gracefully degrade on Ollama failures (1 retry on ECONNREFUSED, 1 JSON-parse retry)
 - Graceful degradation for missing files or configurations
 
 ## Testing

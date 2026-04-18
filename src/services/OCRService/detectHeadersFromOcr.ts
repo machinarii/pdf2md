@@ -1,3 +1,4 @@
+import type pino from 'pino';
 import {
     CENTERING_TOLERANCE,
     ERROR_CODES,
@@ -20,7 +21,6 @@ import type {
     PatternMatch,
 } from '@/types';
 import { AppError } from '@/utils/AppError';
-import type pino from 'pino';
 import { removeOcrGarbage } from '../../utils/TextUtils';
 
 /**
@@ -151,7 +151,12 @@ function extractPlaceholderNames(pattern: string): string[] {
  * Check if text is centered on the page
  * Uses OCR_PAGE_WIDTH and CENTERING_TOLERANCE to determine if text is centered
  */
-function isTextCentered(bbox: { x0: number; y0: number; x1: number; y1: number }): boolean {
+function isTextCentered(bbox: {
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+}): boolean {
     if (!bbox || typeof bbox.x0 !== 'number' || typeof bbox.x1 !== 'number') {
         return false;
     }
@@ -172,7 +177,10 @@ function isTextCentered(bbox: { x0: number; y0: number; x1: number; y1: number }
  * Check if a line is centered on the page and has appropriate width
  * Convenience method for checking individual lines
  */
-function isLineCentered(line: OCRLine, pageMetrics: Record<string, PageMetricsData>): boolean {
+function isLineCentered(
+    line: OCRLine,
+    pageMetrics: Record<string, PageMetricsData>,
+): boolean {
     if (!line?.bbox) {
         return false;
     }
@@ -194,7 +202,8 @@ function isLineCentered(line: OCRLine, pageMetrics: Record<string, PageMetricsDa
 
     // Check if line width is within the centered line width factor of paragraph-text averageWidth
     const maxAllowedWidth =
-        paragraphTextMetrics.maxWidth * TEXT_LAYOUT_TOLERANCES.CENTERED_LINE_WIDTH_FACTOR;
+        paragraphTextMetrics.maxWidth *
+        TEXT_LAYOUT_TOLERANCES.CENTERED_LINE_WIDTH_FACTOR;
 
     return lineWidth <= maxAllowedWidth;
 }
@@ -259,11 +268,15 @@ export function matchHeaderPattern(
 /**
  * Extract ordinal value from matched pattern
  */
-export function extractOrdinalValue(extractedValues: Record<string, string>): number | null {
+export function extractOrdinalValue(
+    extractedValues: Record<string, string>,
+): number | null {
     // Check for roman numbers
     if (extractedValues['roman-number']) {
         const romanValue =
-            ROMAN_NUMERALS[extractedValues['roman-number'] as keyof typeof ROMAN_NUMERALS];
+            ROMAN_NUMERALS[
+                extractedValues['roman-number'] as keyof typeof ROMAN_NUMERALS
+            ];
         if (romanValue) {
             return romanValue;
         }
@@ -280,7 +293,8 @@ export function extractOrdinalValue(extractedValues: Record<string, string>): nu
     // Check for German ordinals
     if (extractedValues['german-ordinal']) {
         const ordinalKey = extractedValues['german-ordinal'].toLowerCase();
-        const ordinalValue = GERMAN_ORDINALS[ordinalKey as keyof typeof GERMAN_ORDINALS];
+        const ordinalValue =
+            GERMAN_ORDINALS[ordinalKey as keyof typeof GERMAN_ORDINALS];
         if (ordinalValue) {
             return ordinalValue;
         }
@@ -312,7 +326,7 @@ export function detectAndProcessHeaders(
     let newLineIndex: number = lineIndex;
     const line = lines[lineIndex];
 
-    if (!line || !line.text) {
+    if (!line?.text) {
         return null;
     }
 
@@ -322,12 +336,16 @@ export function detectAndProcessHeaders(
     const cleanedLineText = removeOcrGarbage(line.text);
 
     for (const { level, config } of headerLevels) {
-        if (!config || !config.formats) {
+        if (!config?.formats) {
             continue;
         }
 
         for (const format of config.formats) {
-            const patternMatch = matchHeaderPattern(cleanedLineText, format.pattern, logger);
+            const patternMatch = matchHeaderPattern(
+                cleanedLineText,
+                format.pattern,
+                logger,
+            );
 
             if (!patternMatch.matched) {
                 logger?.info(
@@ -378,10 +396,14 @@ export function detectAndProcessHeaders(
 
     // Only process multiple lines if the matched format has multipleLines enabled
     if (matchedFormat.multipleLines === true) {
-        for (newLineIndex = lineIndex + 1; newLineIndex < lines.length; newLineIndex++) {
+        for (
+            newLineIndex = lineIndex + 1;
+            newLineIndex < lines.length;
+            newLineIndex++
+        ) {
             const line = lines[newLineIndex];
 
-            if (!line || !line.text) {
+            if (!line?.text) {
                 break;
             }
 
@@ -403,7 +425,11 @@ export function detectAndProcessHeaders(
 
             let patternMatch: PatternMatch | null = null;
             for (const format of foundConfig.formats) {
-                patternMatch = matchHeaderPattern(potentialHeaderText, format.pattern, logger);
+                patternMatch = matchHeaderPattern(
+                    potentialHeaderText,
+                    format.pattern,
+                    logger,
+                );
 
                 if (patternMatch.matched) {
                     break;

@@ -1,6 +1,6 @@
 import pino from 'pino';
 import { LOG_LEVELS, LOG_TAGS } from '../constants';
-import type { LogContext, LogLevel, LoggerConfig } from '../types';
+import type { LogContext, LoggerConfig, LogLevel } from '../types';
 
 /**
  * Tagged logging service using Pino

@@ -10,22 +10,19 @@
  * - Outputs clean text files ready for further processing
  */
 
-// Export the main text extractor class
-export { TextExtractor } from './TextExtractor';
+// Export OCR interfaces
+export type { OCROptions, OCRResult } from '@/services/OCRService';
 
 // Export OCR service (now moved to services/OCRService)
 export { OCRService } from '@/services/OCRService';
-
-// Export step configuration and interfaces
-export type { TextExtractionOptions, TextExtractionResult } from './TextExtractor';
 export type { Step1_2ExecutionSummary } from './ExecutionSummary';
-
-// Export OCR interfaces
-export type { OCRResult, OCROptions } from '@/services/OCRService';
-
 // Export utility functions
 export {
     createStep1_2ExecutionSummary,
     updateStep1_2ExecutionSummary,
     updateStep1_2ExecutionSummaryWithError,
 } from './ExecutionSummary';
+// Export step configuration and interfaces
+export type { TextExtractionOptions, TextExtractionResult } from './TextExtractor';
+// Export the main text extractor class
+export { TextExtractor } from './TextExtractor';

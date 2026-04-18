@@ -1,3 +1,4 @@
+import { EPub } from 'epub2';
 import { ERROR_CODES, LOG_COMPONENTS, MESSAGE_TEMPLATES } from '@/constants';
 import type { LoggerService } from '@/services/LoggerService';
 import { formatLogMessage } from '@/services/LoggerService';
@@ -9,7 +10,6 @@ import type {
     TextQuality,
 } from '@/types';
 import { AppError } from '@/utils/AppError';
-import { EPub } from 'epub2';
 
 /**
  * Handler for extracting text from EPUB files

@@ -13,8 +13,8 @@ export type { Phase1ExecutionSummary } from './PhaseExecutionSummary';
 export {
     createPhase1ExecutionSummary,
     updatePhase1ExecutionSummary,
-    updatePhase1ExecutionSummaryWithStep,
     updatePhase1ExecutionSummaryWithError,
+    updatePhase1ExecutionSummaryWithStep,
 } from './PhaseExecutionSummary';
 
 // Export all step implementations

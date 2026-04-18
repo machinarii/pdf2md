@@ -1,16 +1,24 @@
 # Book Cleaner CLI Architecture
 
+> **Historical document.** Parts of this plan predate the Ollama migration.
+> For the current architecture see the top-level `README.md` and
+> `src/pipeline/phase_1_Text_Extraction_And_Format_Processing/README.md`.
+> The "DeepSeek" references throughout this file have been superseded by
+> Ollama (OpenAI-compatible `/v1` API); see `src/services/OllamaService.ts`.
+
 ## Overview
 
 The Book Cleaner CLI is a Node.js/TypeScript application that provides a comprehensive text cleaning pipeline for books. It transforms raw book sources (PDFs, text files, EPUB) into clean, readable Markdown format with comprehensive metadata. It also takes already processed input, to run it again (e.g. because of changed structure files or improved AI steps)
 
 ## Tech Stack
 
--   **Runtime**: Node.js 22 LTS+
+-   **Runtime**: Node.js current LTS (see `.nvmrc`)
 -   **Language**: TypeScript
 -   **Linter/Formatter**: Biomejs
--   **AI Processing**: DeepSeek API with deepseek.chat model
--   **PDF Processing**: Scribe.js
+-   **AI Processing**: Ollama (local, OpenAI-compatible `/v1` API) — `qwen3:32b` by default
+-   **Deterministic pre-LLM cleanup**: `TextCleanerService` (ported from `txt-cleaner.py`)
+-   **PDF Processing**: pdf-parse + pdf2pic
+-   **OCR**: Tesseract.js
 -   **Logging**: Pino logger with tagged logging for granular control
 -   **CLI Framework**: Commander.js
 -   **File Processing**: Node.js fs/promises API

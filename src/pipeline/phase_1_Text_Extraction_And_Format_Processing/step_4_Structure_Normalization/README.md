@@ -1,10 +1,10 @@
-# Step 1.4: Structure Recognition & Analysis
+# Step 4: Structure Normalization
 
 ## Overview
 
-Step 1.4 analyzes document structure to identify chapters, sections, headings, and hierarchical organization. This step is crucial for understanding the logical flow of the document and enabling advanced processing in later phases.
+Step 4 normalizes document structure — chapters, sections, headings, and hierarchy — after Step 3's Ollama-based structure inference has produced a corrected manifest. It converts raw structural signals into the canonical in-memory representation used by later phases.
 
-> **Note**: This step is currently in placeholder implementation. Full structure recognition is planned for Phase 2 of development.
+> **Note**: This step is currently in placeholder implementation. See `step_3_Book_Structure_Inference/` for the active structure-correction code path.
 
 ## Features
 

@@ -1,5 +1,4 @@
 import { LOG_COMPONENTS } from '@/constants';
-import type { LoggerService } from '@/services/LoggerService';
 import type { PipelineState, ProgressCallback } from '@/types';
 import { AbstractPhase } from './AbstractPhase';
 

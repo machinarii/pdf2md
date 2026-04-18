@@ -2,6 +2,7 @@ import { ERROR_CODES, LOG_COMPONENTS } from '../constants';
 import type { BookStructureService } from '../services/BookStructureService';
 import type { ConfigService } from '../services/ConfigService';
 import type { LoggerService } from '../services/LoggerService';
+import { TextCleanerService } from '../services/TextCleanerService';
 import type {
     FileFormatResult,
     FileInfo,
@@ -29,6 +30,7 @@ export class DataLoadingPhase extends AbstractPhase {
     private bookStructureAnalyzer: BookStructureAnalyzer;
     private fileUtils: FileUtils;
     private bookStructureService: BookStructureService;
+    private textCleaner: TextCleanerService;
 
     constructor(
         logger: LoggerService,
@@ -46,6 +48,7 @@ export class DataLoadingPhase extends AbstractPhase {
         this.bookStructureAnalyzer = new BookStructureAnalyzer(logger);
         this.fileUtils = new FileUtils(logger);
         this.bookStructureService = bookStructureService;
+        this.textCleaner = new TextCleanerService(logger);
     }
 
     public override getName(): string {
@@ -191,7 +194,7 @@ export class DataLoadingPhase extends AbstractPhase {
             }
 
             // Get manifest path for text enhancement
-            const manifestPath = this.bookStructureService.getManifestPath(metadata);
+            const _manifestPath = this.bookStructureService.getManifestPath(metadata);
 
             // Read the extracted text files
             const configKey = this.getConfigKey(metadata);
@@ -222,8 +225,43 @@ export class DataLoadingPhase extends AbstractPhase {
                 );
             }
 
+            // Deterministic cleanup before structure inference — fewer tokens,
+            // cleaner input. Source mode follows whichever text we end up using.
+            if (txtContent) {
+                const { cleanedText, stats } = this.textCleaner.clean(txtContent, {
+                    source: 'pdf',
+                });
+                txtContent = cleanedText;
+                await fs.writeFile(
+                    `${phase1Dir}/step2-cleaned.txt`,
+                    cleanedText,
+                    'utf-8',
+                );
+                pipelineLogger.info(
+                    { pipelineId: state.id, stats },
+                    'Deterministic cleanup of extracted text complete',
+                );
+            }
+            if (ocrContent) {
+                const { cleanedText, stats } = this.textCleaner.clean(ocrContent, {
+                    source: 'ocr',
+                });
+                ocrContent = cleanedText;
+                await fs.writeFile(
+                    `${phase1Dir}/step2-cleaned.ocr`,
+                    cleanedText,
+                    'utf-8',
+                );
+                pipelineLogger.info(
+                    { pipelineId: state.id, stats },
+                    'Deterministic cleanup of OCR text complete',
+                );
+            }
+
             // Process text with Book Structure Inference
-            let structureInferenceResult: import('@/services/BookStructureService/BookStructureService').StructureInferenceResult | null = null;
+            let structureInferenceResult:
+                | import('@/services/BookStructureService/BookStructureService').StructureInferenceResult
+                | null = null;
 
             // Determine text source for structure inference
             let inferenceTextSource: string | null = null;
@@ -243,24 +281,27 @@ export class DataLoadingPhase extends AbstractPhase {
 
             if (inferenceTextSource) {
                 // Perform book structure inference
-                structureInferenceResult = await this.bookStructureAnalyzer.inferBookStructure(
-                    metadata,
-                    inferenceTextSource,
-                    {
-                        chunkSize: 5000,
-                        overlapPercentage: 20,
-                        maxRetries: 3,
-                        confidenceThreshold: 0.7,
-                        enableNewEntries: true,
-                        enableCorrections: true,
-                    },
-                );
+                structureInferenceResult =
+                    await this.bookStructureAnalyzer.inferBookStructure(
+                        metadata,
+                        inferenceTextSource,
+                        {
+                            chunkSize: 5000,
+                            overlapPercentage: 20,
+                            maxRetries: 3,
+                            confidenceThreshold: 0.7,
+                            enableNewEntries: true,
+                            enableCorrections: true,
+                        },
+                    );
 
                 pipelineLogger.info(
                     {
                         pipelineId: state.id,
-                        originalEntries: structureInferenceResult.originalStructure.length,
-                        correctedEntries: structureInferenceResult.correctedStructure.length,
+                        originalEntries:
+                            structureInferenceResult.originalStructure.length,
+                        correctedEntries:
+                            structureInferenceResult.correctedStructure.length,
                         newEntries: structureInferenceResult.newEntries.length,
                         corrections: structureInferenceResult.corrections.length,
                         confidence: structureInferenceResult.confidence,
@@ -303,7 +344,7 @@ export class DataLoadingPhase extends AbstractPhase {
                 data: {
                     formatResult,
                     textExtractionResult,
-                                    structureInferenceResult: structureInferenceResult || null,
+                    structureInferenceResult: structureInferenceResult || null,
                     metadata,
                 },
                 timestamp: new Date(),

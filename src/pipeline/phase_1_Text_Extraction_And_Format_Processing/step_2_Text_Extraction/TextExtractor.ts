@@ -78,7 +78,10 @@ export class TextExtractor {
 
         try {
             // Check and prompt for missing boundaries
-            const updatedOptions = await this.checkAndPromptBoundaries(metadata, options);
+            const updatedOptions = await this.checkAndPromptBoundaries(
+                metadata,
+                options,
+            );
 
             // Extract text based on file type
             const result = await this.performTextExtraction(
@@ -168,7 +171,12 @@ export class TextExtractor {
         switch (fileInfo.format) {
             case 'pdf':
                 if (options.fileType === 'pdf-text-ocr') {
-                    return this.extractFromPdfTextOcr(fileInfo, options, metadata, bookType);
+                    return this.extractFromPdfTextOcr(
+                        fileInfo,
+                        options,
+                        metadata,
+                        bookType,
+                    );
                 }
                 return this.extractFromPdfText(fileInfo, options);
             case 'epub':
@@ -288,7 +296,9 @@ export class TextExtractor {
 
         // Sanity check: ensure start comes before end
         if (startFound && endFound && startIndex >= endIndex) {
-            console.error('❌ Start marker comes after end marker - using entire document');
+            console.error(
+                '❌ Start marker comes after end marker - using entire document',
+            );
             console.error(`Start index: ${startIndex}, End index: ${endIndex}`);
             // Fallback to entire document
             startIndex = 0;
@@ -351,7 +361,9 @@ export class TextExtractor {
                     },
                 );
 
-                console.log(`📄 Found existing OCR file: ${ocrFile} (${content.length} chars)`);
+                console.log(
+                    `📄 Found existing OCR file: ${ocrFile} (${content.length} chars)`,
+                );
 
                 return {
                     exists: true,
@@ -543,7 +555,10 @@ export class TextExtractor {
             {
                 filename: fileInfo.name,
                 textFile,
-                ocrFile: result.ocrText || options.fileType === 'pdf-text-ocr' ? ocrFile : null,
+                ocrFile:
+                    result.ocrText || options.fileType === 'pdf-text-ocr'
+                        ? ocrFile
+                        : null,
                 extractedLength: result.extractedText.length,
                 ocrLength: result.ocrText?.length || 0,
                 phase1Dir,
@@ -575,7 +590,11 @@ export class TextExtractor {
     /**
      * Debug helper to find similar text when marker search fails
      */
-    private debugTextMarkerSearch(text: string, marker: string, markerType: 'start' | 'end'): void {
+    private debugTextMarkerSearch(
+        text: string,
+        marker: string,
+        markerType: 'start' | 'end',
+    ): void {
         const maxSamples = 3;
         const contextLength = 100;
 
@@ -585,7 +604,9 @@ export class TextExtractor {
         // Try partial matches
         const markerWords = marker.split(/\s+/);
         if (markerWords.length > 1) {
-            console.log(`🔍 Searching for partial matches of ${markerWords.length} words...`);
+            console.log(
+                `🔍 Searching for partial matches of ${markerWords.length} words...`,
+            );
 
             for (let i = 0; i < markerWords.length && i < maxSamples; i++) {
                 const word = markerWords[i];
@@ -599,7 +620,9 @@ export class TextExtractor {
                             wordIndex + word.length + contextLength / 2,
                         );
                         const context = text.slice(start, end);
-                        console.log(`  ✅ Found word "${word}" at position ${wordIndex}:`);
+                        console.log(
+                            `  ✅ Found word "${word}" at position ${wordIndex}:`,
+                        );
                         console.log(`     Context: "...${context}..."`);
                     }
                 }

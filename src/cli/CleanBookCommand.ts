@@ -1,8 +1,8 @@
 import path from 'node:path';
+import { Command } from 'commander';
 import {
     APP_DESCRIPTION,
     APP_VERSION,
-    BOOK_TYPES,
     CLI_ALIASES,
     CLI_OPTIONS,
     DEFAULT_LOG_LEVEL,
@@ -20,28 +20,22 @@ import { PipelineManager } from '@/pipeline/PipelineManager';
 import { TextNormalizationPhase } from '@/pipeline/TextNormalizationPhase';
 import { BookStructureService } from '@/services/BookStructureService';
 import { ConfigService } from '@/services/ConfigService';
-import { type LoggerService, createDefaultLoggerService } from '@/services/LoggerService';
+import {
+    createDefaultLoggerService,
+    type LoggerService,
+} from '@/services/LoggerService';
 import type {
+    BookManifestInfo,
     CLIOptions,
     FilenameMetadata,
     LogLevel,
     PipelineState,
     ProgressInfo,
-    BookManifestInfo,
 } from '@/types';
 import { AppError, isAppError } from '@/utils/AppError';
-import {
-    error as chalkError,
-    cyan,
-    getChalkInstance,
-    gray,
-    info,
-    success,
-    warn,
-} from '@/utils/ChalkUtils';
+import { cyan, getChalkInstance, gray, info, success, warn } from '@/utils/ChalkUtils';
 import { FileUtils } from '@/utils/FileUtils';
-import { Command } from 'commander';
-import { promises as fs } from 'node:fs';
+
 // import ora, { type Ora } from "ora"; // Removed to fix interactive prompt issues
 
 // Commander.js option types (following .cursorrules #5 - no any keyword)
@@ -90,13 +84,19 @@ export class CleanBookCommand {
         const evaluationPhase = new EvaluationPhase(this.logger);
         const aiEnhancementsPhase = new AIEnhancementsPhase(this.logger);
 
-        this.pipelineManager.registerPhase(PIPELINE_PHASES.DATA_LOADING, dataLoadingPhase);
+        this.pipelineManager.registerPhase(
+            PIPELINE_PHASES.DATA_LOADING,
+            dataLoadingPhase,
+        );
         this.pipelineManager.registerPhase(
             PIPELINE_PHASES.TEXT_NORMALIZATION,
             textNormalizationPhase,
         );
         this.pipelineManager.registerPhase(PIPELINE_PHASES.EVALUATION, evaluationPhase);
-        this.pipelineManager.registerPhase(PIPELINE_PHASES.AI_ENHANCEMENTS, aiEnhancementsPhase);
+        this.pipelineManager.registerPhase(
+            PIPELINE_PHASES.AI_ENHANCEMENTS,
+            aiEnhancementsPhase,
+        );
     }
 
     /**
@@ -169,11 +169,15 @@ export class CleanBookCommand {
             let bookManifest: BookManifestInfo;
             try {
                 console.log('🔍 Attempting to load existing manifest...');
-                bookManifest = await this.bookStructureService.loadBookManifest(metadata);
+                bookManifest =
+                    await this.bookStructureService.loadBookManifest(metadata);
                 console.log('✅ Existing manifest loaded successfully');
 
                 // Check if text boundaries are missing and prompt for them
-                if (!bookManifest.textBeforeFirstChapter || !bookManifest.textAfterLastChapter) {
+                if (
+                    !bookManifest.textBeforeFirstChapter ||
+                    !bookManifest.textAfterLastChapter
+                ) {
                     console.log('📝 Text boundaries missing, prompting for them...');
                     const { textBeforeFirstChapter, textAfterLastChapter } =
                         await this.promptForTextBoundaries();
@@ -192,7 +196,8 @@ export class CleanBookCommand {
 
                     // Reload the manifest to get the updated version
                     console.log('🔄 Reloading manifest...');
-                    bookManifest = await this.bookStructureService.loadBookManifest(metadata);
+                    bookManifest =
+                        await this.bookStructureService.loadBookManifest(metadata);
                     console.log('✅ Manifest reloaded');
                 }
             } catch (error) {
@@ -233,10 +238,13 @@ export class CleanBookCommand {
 
                     // Reload the manifest to get the updated version
                     console.log('🔄 Reloading manifest...');
-                    bookManifest = await this.bookStructureService.loadBookManifest(metadata);
+                    bookManifest =
+                        await this.bookStructureService.loadBookManifest(metadata);
                     console.log('✅ Manifest reloaded');
 
-                    cliLogger.info('Book manifest created successfully with text boundaries');
+                    cliLogger.info(
+                        'Book manifest created successfully with text boundaries',
+                    );
                 } else {
                     console.log('❌ Unexpected error, rethrowing...');
                     throw error;
@@ -250,7 +258,10 @@ export class CleanBookCommand {
             );
 
             // Create pipeline configuration
-            const pipelineConfig = this.configService.createPipelineConfig(bookConfig, cliOptions);
+            const pipelineConfig = this.configService.createPipelineConfig(
+                bookConfig,
+                cliOptions,
+            );
 
             // Setup progress reporting
             this.setupProgressReporting(cliOptions);
@@ -271,7 +282,9 @@ export class CleanBookCommand {
             // Report success
             await success('✓ Book cleaning completed successfully!');
             await info(`Output directory: ${pipelineConfig.outputDir}`);
-            await info(`Processing time: ${this.formatDuration(result.startTime, result.endTime)}`);
+            await info(
+                `Processing time: ${this.formatDuration(result.startTime, result.endTime)}`,
+            );
 
             if (cliOptions.verbose) {
                 await this.printProcessingStatistics(result);
@@ -288,7 +301,10 @@ export class CleanBookCommand {
     /**
      * Parse and validate CLI options
      */
-    private async parseOptions(inputFile: string, options: CommanderOptions): Promise<CLIOptions> {
+    private async parseOptions(
+        inputFile: string,
+        options: CommanderOptions,
+    ): Promise<CLIOptions> {
         // Validate required book type
         if (!options.bookType) {
             console.error('\n❌ Error: Book type is required\n');
@@ -415,19 +431,33 @@ export class CleanBookCommand {
             ),
         );
         console.log(
-            chalk.cyan('This helps remove publisher content, prefaces, appendices, etc.\n'),
+            chalk.cyan(
+                'This helps remove publisher content, prefaces, appendices, etc.\n',
+            ),
         );
 
         console.log(chalk.green('🔍 How to find these boundaries:'));
-        console.log(chalk.white('1. Open your PDF and look for the first chapter or main content'));
-        console.log(chalk.white('2. Find the text that appears right BEFORE the first chapter'));
-        console.log(chalk.white('3. Find the text that appears right AFTER the last chapter'));
+        console.log(
+            chalk.white(
+                '1. Open your PDF and look for the first chapter or main content',
+            ),
+        );
+        console.log(
+            chalk.white('2. Find the text that appears right BEFORE the first chapter'),
+        );
+        console.log(
+            chalk.white('3. Find the text that appears right AFTER the last chapter'),
+        );
         console.log(chalk.white('4. Copy these exact phrases (case-sensitive)\n'));
 
         console.log(chalk.yellow('💡 Examples:'));
-        console.log(chalk.white('• "START OF THIS BOOK" or "BEGINNING OF AUTHOR CONTENT"'));
+        console.log(
+            chalk.white('• "START OF THIS BOOK" or "BEGINNING OF AUTHOR CONTENT"'),
+        );
         console.log(chalk.white('• "CHAPTER 1" or "I. INTRODUCTION"'));
-        console.log(chalk.white('• "END OF THIS BOOK" or "APPENDIX" or "BIBLIOGRAPHY"'));
+        console.log(
+            chalk.white('• "END OF THIS BOOK" or "APPENDIX" or "BIBLIOGRAPHY"'),
+        );
         console.log(chalk.white('• "PUBLISHER NOTES" or "ABOUT THE AUTHOR"\n'));
 
         const textBeforeFirstChapter = await this.promptForText(
@@ -444,7 +474,9 @@ export class CleanBookCommand {
         console.log(chalk.white(`• Before: "${textBeforeFirstChapter}"`));
         console.log(chalk.white(`• After: "${textAfterLastChapter}"`));
         console.log(
-            chalk.cyan('The book cleaner will now extract content between these boundaries.\n'),
+            chalk.cyan(
+                'The book cleaner will now extract content between these boundaries.\n',
+            ),
         );
 
         return { textBeforeFirstChapter, textAfterLastChapter };
@@ -454,7 +486,7 @@ export class CleanBookCommand {
      * Helper to prompt for text input
      */
     private async promptForText(message: string, hint?: string): Promise<string> {
-        const readline = require('readline');
+        const readline = require('node:readline');
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
@@ -496,7 +528,9 @@ export class CleanBookCommand {
             console.log('Initializing...');
 
             this.pipelineManager.setProgressCallback((progress: ProgressInfo) => {
-                console.log(`${progress.phase}: ${progress.message} (${progress.percentage}%)`);
+                console.log(
+                    `${progress.phase}: ${progress.message} (${progress.percentage}%)`,
+                );
             });
         }
     }

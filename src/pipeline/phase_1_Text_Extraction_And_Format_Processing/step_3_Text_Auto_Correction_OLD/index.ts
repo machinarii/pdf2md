@@ -4,25 +4,22 @@
 // - Enhancing text by fixing spelling mistakes, removing debris, reconstructing broken words
 // - Validating the enhanced text quality
 
-export { TextQualityAnalyzer } from './TextComparator';
-export { TextEnhancer } from './TextEnhancer';
-export { QualityValidator } from './QualityValidator';
+export type { TextQualityEnhancementSummary } from './ExecutionSummary';
 export { TextQualityEnhancementExecutionSummary } from './ExecutionSummary';
+export type {
+    QualityValidationOptions,
+    QualityValidationResult,
+    ValidationIssue,
+} from './QualityValidator';
+export { QualityValidator } from './QualityValidator';
 
 // Type exports
 export type {
-    TextQualityAnalysisResult,
-    QualityIssue,
-    QualityImprovement,
     QualityAnalysisOptions,
+    QualityImprovement,
+    QualityIssue,
+    TextQualityAnalysisResult,
 } from './TextComparator';
-
-export type { TextEnhancementResult, TextEnhancementOptions } from './TextEnhancer';
-
-export type {
-    QualityValidationResult,
-    ValidationIssue,
-    QualityValidationOptions,
-} from './QualityValidator';
-
-export type { TextQualityEnhancementSummary } from './ExecutionSummary';
+export { TextQualityAnalyzer } from './TextComparator';
+export type { TextEnhancementOptions, TextEnhancementResult } from './TextEnhancer';
+export { TextEnhancer } from './TextEnhancer';

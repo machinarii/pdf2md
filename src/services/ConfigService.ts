@@ -1,8 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import yaml from 'js-yaml';
 import {
-    AI_PROVIDERS,
-    CONFIG_FILE_EXTENSION,
     DEFAULT_AI_CONFIG,
     DEFAULT_ARTIFACTS_DIR,
     DEFAULT_BOOK_MANIFEST_FILE,
@@ -15,17 +14,21 @@ import {
     DEFAULT_SECTION_MARKERS,
     ENV_VARS,
     ERROR_CODES,
-    ERROR_MESSAGES,
     LOG_COMPONENTS,
     OCR_ENGINES,
     OCR_LANGUAGES,
+    OLLAMA_DEFAULTS,
     OUTPUT_FORMATS,
 } from '@/constants';
-import type { BookConfig, FilenameMetadata, LogLevel, PipelineConfig } from '@/types';
-import type { BookManifestInfo } from '@/types';
+import type {
+    BookConfig,
+    BookManifestInfo,
+    FilenameMetadata,
+    LogLevel,
+    PipelineConfig,
+} from '@/types';
 import { AppError } from '@/utils/AppError';
 import { FileUtils } from '@/utils/FileUtils';
-import yaml from 'js-yaml';
 import { BookStructureService } from './BookStructureService';
 import type { LoggerService } from './LoggerService';
 
@@ -226,9 +229,12 @@ export class ConfigService {
                 },
             },
             ai: {
-                provider: AI_PROVIDERS.DEEPSEEK,
-                model: 'deepseek-chat',
-                apiKey: process.env[ENV_VARS.DEEPSEEK_API_KEY] || '',
+                baseUrl:
+                    process.env[ENV_VARS.OLLAMA_BASE_URL] || OLLAMA_DEFAULTS.BASE_URL,
+                model: process.env[ENV_VARS.OLLAMA_MODEL] || OLLAMA_DEFAULTS.MODEL,
+                numCtx: process.env[ENV_VARS.OLLAMA_NUM_CTX]
+                    ? Number(process.env[ENV_VARS.OLLAMA_NUM_CTX])
+                    : OLLAMA_DEFAULTS.NUM_CTX,
                 temperature: DEFAULT_AI_CONFIG.TEMPERATURE,
                 maxTokens: DEFAULT_AI_CONFIG.MAX_TOKENS,
                 retries: DEFAULT_AI_CONFIG.RETRIES,
@@ -248,20 +254,22 @@ export class ConfigService {
      * Merge environment variables into configuration
      */
     private mergeEnvironmentVariables(config: BookConfig): void {
-        // AI API keys
-        const deepseekApiKey = process.env[ENV_VARS.DEEPSEEK_API_KEY];
-        if (deepseekApiKey) {
-            config.ai.apiKey = deepseekApiKey;
+        const baseUrl = process.env[ENV_VARS.OLLAMA_BASE_URL];
+        if (baseUrl) {
+            config.ai.baseUrl = baseUrl;
         }
 
-        const openaiApiKey = process.env[ENV_VARS.OPENAI_API_KEY];
-        if (openaiApiKey && config.ai.provider === AI_PROVIDERS.OPENAI) {
-            config.ai.apiKey = openaiApiKey;
+        const model = process.env[ENV_VARS.OLLAMA_MODEL];
+        if (model) {
+            config.ai.model = model;
         }
 
-        const anthropicApiKey = process.env[ENV_VARS.ANTHROPIC_API_KEY];
-        if (anthropicApiKey && config.ai.provider === AI_PROVIDERS.ANTHROPIC) {
-            config.ai.apiKey = anthropicApiKey;
+        const numCtxRaw = process.env[ENV_VARS.OLLAMA_NUM_CTX];
+        if (numCtxRaw) {
+            const numCtx = Number(numCtxRaw);
+            if (Number.isFinite(numCtx) && numCtx > 0) {
+                config.ai.numCtx = numCtx;
+            }
         }
     }
 

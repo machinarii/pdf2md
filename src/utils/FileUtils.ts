@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { lookup } from 'mime-types';
 import {
     ERROR_CODES,
     ERROR_MESSAGES,
@@ -12,7 +13,6 @@ import {
 } from '@/constants';
 import type { LoggerService } from '@/services/LoggerService';
 import type { FileInfo, FilenameMetadata, SupportedFormat } from '@/types';
-import { lookup } from 'mime-types';
 import { AppError } from './AppError';
 
 // Define BufferEncoding type for Node.js buffer operations

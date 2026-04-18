@@ -27,14 +27,14 @@ This is a TypeScript/Node.js CLI application for cleaning and processing book fi
 
 ## Tech Stack
 
--   **Runtime**: Node.js 18+ LTS
+-   **Runtime**: Node.js current LTS (see `.nvmrc`)
 -   **Language**: TypeScript (strict mode)
 -   **Compiler**: SWC (Speedy Web Compiler)
 -   **Linter/Formatter**: Biome
 -   **Testing**: Jest with @swc/jest
 -   **CLI Framework**: Commander.js
 -   **Logging**: Pino (structured logging)
--   **AI Integration**: DeepSeek API
+-   **AI Integration**: Ollama (local, OpenAI-compatible `/v1` API)
 
 ## Architecture Guidelines
 
@@ -152,7 +152,8 @@ import { LoggerService } from '@/services/LoggerService';
 -   Use the custom `AppError` class for application-specific errors
 -   Always include context and cause chaining in errors
 -   **FORBIDDEN**: Never resolve TypeScript errors with `any` keyword - use proper typing instead
--   **DeepSeek Integration**: If DeepSeek API fails, exit the application - no fallback mechanisms
+-   **Ollama Integration**: Graceful degradation on failures (1 retry on `ECONNREFUSED`,
+    1 retry on invalid JSON, then continue with an empty inference result)
 
 ### 5. TypeScript Best Practices
 
@@ -311,13 +312,14 @@ logger.info('Starting text extraction', {
 
 ## AI Integration Guidelines
 
-### DeepSeek API
+### Ollama API
 
--   Use structured prompts for text cleaning
--   Implement proper retry logic with exponential backoff
--   Handle rate limiting gracefully
+-   Use structured prompts for text cleaning; pass `response_format: { type: 'json_object' }`
+    when the caller expects JSON
+-   Always include `options: { num_ctx }` so the local model loads with enough context
 -   Log all API interactions for debugging
--   **Critical**: Exit application on DeepSeek failures (no fallbacks)
+-   Graceful degradation on failures — do not exit the process (1 retry on
+    `ECONNREFUSED`, 1 retry on invalid JSON, then continue with an empty result)
 
 ### Text Processing
 

@@ -1,5 +1,10 @@
 # Book Cleaner CLI - Implementation Plan (Updated)
 
+> **Historical document.** This plan predates the Ollama migration. The
+> "DeepSeek" references throughout have been superseded by Ollama (local,
+> OpenAI-compatible `/v1` API). For current state see the top-level `README.md`
+> and `book-cleaner-ollama-migration-plan.md`.
+
 ## Overview
 
 This document outlines the implementation plan for the Book Cleaner CLI project, a Node.js/TypeScript application that transforms raw book sources (PDFs, text files, EPUB) into clean, readable Markdown format with comprehensive metadata.

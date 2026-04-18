@@ -1,11 +1,3 @@
-/**
- * Constants for the Book Cleaner CLI
- * All string constants should be defined here to avoid magic strings in code
- */
-
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 // ==================== Application Constants ====================
 
 // Read version from package.json
@@ -220,7 +212,11 @@ export const QUALITY_SEVERITIES = {
 
 // ==================== Default Text Boundaries ====================
 
-export const DEFAULT_PARAGRAPH_MARKERS = ['\\n\\n', '\\r\\n\\r\\n', '\\n\\r\\n\\r'] as const;
+export const DEFAULT_PARAGRAPH_MARKERS = [
+    '\\n\\n',
+    '\\r\\n\\r\\n',
+    '\\n\\r\\n\\r',
+] as const;
 
 export const DEFAULT_SECTION_MARKERS = ['***', '---', '===', '~~~'] as const;
 
@@ -233,7 +229,12 @@ export const DEFAULT_CHAPTER_MARKERS = [
     'Section',
 ] as const;
 
-export const DEFAULT_FOOTNOTE_MARKERS = ['\\d+\\)', '\\d+\\.', '\\*\\d+', '\\[\\d+\\]'] as const;
+export const DEFAULT_FOOTNOTE_MARKERS = [
+    '\\d+\\)',
+    '\\d+\\.',
+    '\\*\\d+',
+    '\\[\\d+\\]',
+] as const;
 
 // ==================== Footnote Format Constants ====================
 
@@ -243,27 +244,10 @@ export const FOOTNOTE_FORMATS = {
 
 // ==================== AI Provider Constants ====================
 
-export const AI_PROVIDERS = {
-    DEEPSEEK: 'deepseek',
-    OPENAI: 'openai',
-    ANTHROPIC: 'anthropic',
-} as const;
-
-export const AI_MODELS = {
-    DEEPSEEK: {
-        CHAT: 'deepseek-chat',
-        CODER: 'deepseek-coder',
-    },
-    OPENAI: {
-        GPT35_TURBO: 'gpt-3.5-turbo',
-        GPT4: 'gpt-4',
-        GPT4_TURBO: 'gpt-4-turbo',
-    },
-    ANTHROPIC: {
-        CLAUDE_3_HAIKU: 'claude-3-haiku-20240307',
-        CLAUDE_3_SONNET: 'claude-3-sonnet-20240229',
-        CLAUDE_3_OPUS: 'claude-3-opus-20240229',
-    },
+export const OLLAMA_DEFAULTS = {
+    BASE_URL: 'http://localhost:11434/v1',
+    MODEL: 'qwen3:32b',
+    NUM_CTX: 32768,
 } as const;
 
 export const DEFAULT_AI_CONFIG = {
@@ -305,7 +289,7 @@ export const PROGRESS_PHASES = {
 export const VALIDATION_PATTERNS = {
     AUTHOR_TITLE_SEPARATOR: '#',
     BOOK_INDEX_PREFIX: '#',
-    FILENAME_CHARS: /^[a-zA-Z0-9_\-#\s\.]+$/,
+    FILENAME_CHARS: /^[a-zA-Z0-9_\-#\s.]+$/,
     CHAPTER_NUMBER: /^(\d+)\.?(\d+)?$/,
     FOOTNOTE_REFERENCE: /^\d+$/,
     FILENAME_METADATA: /^([^#]+)#([^#]+)(?:#([^#]+))?$/,
@@ -375,7 +359,9 @@ export const ERROR_OUTPUT_FORMATS = {
     COMPACT: 'compact',
 } as const;
 
-export const VALID_ERROR_OUTPUT_FORMATS = Object.values(ERROR_OUTPUT_FORMATS) as readonly string[];
+export const VALID_ERROR_OUTPUT_FORMATS = Object.values(
+    ERROR_OUTPUT_FORMATS,
+) as readonly string[];
 
 // ==================== File System Constants ====================
 
@@ -427,11 +413,9 @@ export const TEXT_SOURCE_PRIORITY = {
 // ==================== Environment Variables ====================
 
 export const ENV_VARS = {
-    DEEPSEEK_API_KEY: 'DEEPSEEK_API_KEY',
-    DEEPSEEK_REST_API_KEY: 'DEEPSEEK_REST_API_KEY',
-    DEEPSEEK_REST_API_URI: 'DEEPSEEK_REST_API_URI',
-    OPENAI_API_KEY: 'OPENAI_API_KEY',
-    ANTHROPIC_API_KEY: 'ANTHROPIC_API_KEY',
+    OLLAMA_BASE_URL: 'OLLAMA_BASE_URL',
+    OLLAMA_MODEL: 'OLLAMA_MODEL',
+    OLLAMA_NUM_CTX: 'OLLAMA_NUM_CTX',
     LOG_LEVEL: 'LOG_LEVEL',
     DEBUG: 'DEBUG',
     NODE_ENV: 'NODE_ENV',
@@ -473,23 +457,29 @@ export const MESSAGE_TEMPLATES = {
 
 export const STRUCTURE_ANALYSIS_PATTERNS = {
     CHAPTER_HEADERS: [
-        /^(Kapitel|Teil|Part|Abschnitt)\s+(\d+|[IVXLCDM]+)(?:\s*[:\.]?\s*(.+))?$/i,
+        /^(Kapitel|Teil|Part|Abschnitt)\s+(\d+|[IVXLCDM]+)(?:\s*[:.]?\s*(.+))?$/i,
         /^(\d+|[IVXLCDM]+)\.\s*(.+)$/i,
         /^(\d+|[IVXLCDM]+)\s+(.+)$/i,
     ],
     LECTURE_HEADERS: [
-        /^(Vortrag|Lecture|Vorlesung)\s+(\d+|[IVXLCDM]+)(?:\s*[:\.]?\s*(.+))?$/i,
-        /^(\d+)\.\s*(Vortrag|Lecture|Vorlesung)(?:\s*[:\.]?\s*(.+))?$/i,
+        /^(Vortrag|Lecture|Vorlesung)\s+(\d+|[IVXLCDM]+)(?:\s*[:.]?\s*(.+))?$/i,
+        /^(\d+)\.\s*(Vortrag|Lecture|Vorlesung)(?:\s*[:.]?\s*(.+))?$/i,
         /^(Vortrag|Lecture|Vorlesung)\s+vom\s+(.+)$/i,
     ],
     SECTION_HEADERS: [
-        /^(Abschnitt|Section|Unterkapitel)\s+(\d+|[IVXLCDM]+)(?:\s*[:\.]?\s*(.+))?$/i,
+        /^(Abschnitt|Section|Unterkapitel)\s+(\d+|[IVXLCDM]+)(?:\s*[:.]?\s*(.+))?$/i,
         /^(\d+)\.(\d+)\s+(.+)$/i,
         /^[A-Z][a-z]*\s+[A-Z][a-z]*$/,
     ],
-    FOOTNOTE_PATTERNS: [/\[(\d+)\]/g, /\((\d+)\)/g, /(\d+)\)/g, /\*(\d+)/g, /¹|²|³|⁴|⁵|⁶|⁷|⁸|⁹|⁰/g],
+    FOOTNOTE_PATTERNS: [
+        /\[(\d+)\]/g,
+        /\((\d+)\)/g,
+        /(\d+)\)/g,
+        /\*(\d+)/g,
+        /¹|²|³|⁴|⁵|⁶|⁷|⁸|⁹|⁰/g,
+    ],
     FOOTNOTE_MARKERS: [
-        /^(\d+)\s*[\)\.]?\s*(.+)$/,
+        /^(\d+)\s*[).]?\s*(.+)$/,
         /^\[(\d+)\]\s*(.+)$/,
         /^\*(\d+)\s*(.+)$/,
         /^¹|²|³|⁴|⁵|⁶|⁷|⁸|⁹|⁰\s*(.+)$/,
@@ -498,7 +488,13 @@ export const STRUCTURE_ANALYSIS_PATTERNS = {
         /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*[:]\s*(.+)$/,
         /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*\((.+?)\)\s*[:]\s*(.+)$/,
     ],
-    PARAGRAPH_INDICATORS: [/^\s*\d+\.\s+/, /^\s*[a-z]\)\s+/, /^\s*\*\s+/, /^\s*-\s+/, /^\s*•\s+/],
+    PARAGRAPH_INDICATORS: [
+        /^\s*\d+\.\s+/,
+        /^\s*[a-z]\)\s+/,
+        /^\s*\*\s+/,
+        /^\s*-\s+/,
+        /^\s*•\s+/,
+    ],
 } as const;
 
 export const STRUCTURE_ANALYSIS_TYPES = {

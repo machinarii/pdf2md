@@ -1,4 +1,17 @@
-# Phase 1, Step 3: Text Quality Enhancement
+# Phase 1, Step 3: Text Quality Enhancement — DEPRECATED
+
+> **Deprecated.** This step has been superseded by two components that run in its
+> place during Phase 1:
+>
+> 1. `src/services/TextCleanerService.ts` — deterministic pre-LLM cleanup (Unicode
+>    normalization, page-number / TOC / boilerplate removal, hyphen rejoining,
+>    paragraph rewrap, repeated header/footer dedup, OCR artifact fixes).
+> 2. `step_3_Book_Structure_Inference/` — LLM-based structure correction via Ollama.
+>
+> The `TextEnhancer` / `TextComparator` / `QualityValidator` classes in this
+> directory are kept only for historical reference and are not invoked by the
+> pipeline. Do not add new features here.
+
 
 ## Overview
 

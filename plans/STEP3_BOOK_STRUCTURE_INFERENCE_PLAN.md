@@ -1,5 +1,11 @@
 # Step 3: Book Structure Inference Plan
 
+> **Historical document.** This plan was written against DeepSeek; the
+> implementation now uses Ollama (`src/services/OllamaService.ts`). The
+> "DeepSeek" references throughout should be read as "Ollama". The
+> `DEEPSEEK_REST_API_KEY` / `DEEPSEEK_REST_API_URI` env vars have been replaced
+> by `OLLAMA_BASE_URL` / `OLLAMA_MODEL` / `OLLAMA_NUM_CTX`.
+
 ## Overview
 
 This plan outlines the transformation of Phase 1, Step 3 from "Text Auto Correction" to "Book Structure Inference". The new step will use AI-powered analysis to correct and enhance book structure (Table of Contents and paragraph starts) by analyzing text content against existing book structure definitions.

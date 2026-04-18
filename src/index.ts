@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 
+import { program } from 'commander';
 import { CleanBookCommand } from '@/cli/CleanBookCommand';
 import { APP_NAME, APP_VERSION, ENV_VARS, LOG_LEVELS } from '@/constants';
 import { createDefaultLoggerService } from '@/services/LoggerService';
 import type { LogLevel } from '@/types';
 import { AppError } from '@/utils/AppError';
-import {
-    error as chalkError,
-    cyan,
-    getChalkInstance,
-    gray,
-    info,
-    success,
-    warn,
-} from '@/utils/ChalkUtils';
-import { program } from 'commander';
+import { getChalkInstance, gray, warn } from '@/utils/ChalkUtils';
 
 /**
  * Main entry point for the Book Cleaner CLI

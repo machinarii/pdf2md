@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import yaml from 'js-yaml';
 import {
     CONFIG_FILE_EXTENSION,
     DEFAULT_ARTIFACTS_DIR,
@@ -11,10 +12,12 @@ import {
 import type { BookManifestInfo, FileFormatResult, FilenameMetadata } from '@/types';
 import { AppError } from '@/utils/AppError';
 import { FileUtils } from '@/utils/FileUtils';
-import yaml from 'js-yaml';
 import type { LoggerService } from '../LoggerService';
 import { TextChunker } from '../TextChunker';
-import { StructureInferrer, type StructureInferenceResponse } from './StructureInferrer';
+import {
+    type StructureInferenceResponse,
+    StructureInferrer,
+} from './StructureInferrer';
 
 /**
  * Information about configuration updates needed
@@ -54,14 +57,20 @@ export class BookStructureService {
      * Load and cache book manifest for the entire CLI run
      * This should be called once at the start of the clean-book command
      */
-    public async loadBookManifest(metadata: FilenameMetadata): Promise<BookManifestInfo> {
+    public async loadBookManifest(
+        metadata: FilenameMetadata,
+    ): Promise<BookManifestInfo> {
         const configKey = this.getConfigKey(metadata);
 
         // Check cache first
         if (this.manifestCache.has(configKey)) {
-            this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'Using cached book manifest', {
-                configKey,
-            });
+            this.logger.debug(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+                'Using cached book manifest',
+                {
+                    configKey,
+                },
+            );
             const cachedManifest = this.manifestCache.get(configKey);
             if (!cachedManifest) {
                 throw new AppError(
@@ -81,11 +90,15 @@ export class BookStructureService {
         // Cache the result
         this.manifestCache.set(configKey, manifest);
 
-        this.logger.info(LOG_COMPONENTS.CONFIG_SERVICE, 'Loaded and cached book manifest', {
-            configKey,
-            author: manifest.author,
-            title: manifest.title,
-        });
+        this.logger.info(
+            LOG_COMPONENTS.CONFIG_SERVICE,
+            'Loaded and cached book manifest',
+            {
+                configKey,
+                author: manifest.author,
+                title: manifest.title,
+            },
+        );
 
         return manifest;
     }
@@ -143,7 +156,11 @@ export class BookStructureService {
         manifest: BookManifestInfo,
     ): Promise<void> {
         const configKey = this.getConfigKey(metadata);
-        const bookSpecificPath = path.join(this.configDir, configKey, 'book-manifest.yaml');
+        const bookSpecificPath = path.join(
+            this.configDir,
+            configKey,
+            'book-manifest.yaml',
+        );
 
         try {
             // Ensure directory exists
@@ -167,7 +184,8 @@ export class BookStructureService {
                 yamlManifest['book-index'] = manifest.bookIndex;
             }
             if (manifest.textBeforeFirstChapter) {
-                yamlManifest['text-before-first-chapter'] = manifest.textBeforeFirstChapter;
+                yamlManifest['text-before-first-chapter'] =
+                    manifest.textBeforeFirstChapter;
             }
             if (manifest.textAfterLastChapter) {
                 yamlManifest['text-after-last-chapter'] = manifest.textAfterLastChapter;
@@ -176,9 +194,13 @@ export class BookStructureService {
             // Save to file
             await fs.writeFile(bookSpecificPath, yaml.dump(yamlManifest), 'utf-8');
 
-            this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'Saved book manifest to file', {
-                configPath: bookSpecificPath,
-            });
+            this.logger.debug(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+                'Saved book manifest to file',
+                {
+                    configPath: bookSpecificPath,
+                },
+            );
         } catch (error) {
             throw new AppError(
                 ERROR_CODES.CONFIG_INVALID,
@@ -199,7 +221,10 @@ export class BookStructureService {
             return this.defaultManifestCache;
         }
 
-        const defaultTemplatePath = path.join(this.configDir, DEFAULT_BOOK_MANIFEST_FILE);
+        const defaultTemplatePath = path.join(
+            this.configDir,
+            DEFAULT_BOOK_MANIFEST_FILE,
+        );
 
         try {
             const templateContent = await fs.readFile(defaultTemplatePath, 'utf-8');
@@ -241,7 +266,10 @@ export class BookStructureService {
      */
     public async exists(metadata: FilenameMetadata): Promise<boolean> {
         const configKey = this.getConfigKey(metadata);
-        const configPath = path.join(this.configDir, `${configKey}${CONFIG_FILE_EXTENSION}`);
+        const configPath = path.join(
+            this.configDir,
+            `${configKey}${CONFIG_FILE_EXTENSION}`,
+        );
 
         try {
             await fs.access(configPath);
@@ -255,20 +283,30 @@ export class BookStructureService {
      * Load book structure information from YAML file
      * Only loads from book-specific directory, fails if not found
      */
-    public async loadBookStructure(metadata: FilenameMetadata): Promise<BookManifestInfo> {
+    public async loadBookStructure(
+        metadata: FilenameMetadata,
+    ): Promise<BookManifestInfo> {
         const configKey = this.getConfigKey(metadata);
 
         // Only load from book-specific directory
-        const bookSpecificPath = path.join(this.configDir, configKey, 'book-manifest.yaml');
+        const bookSpecificPath = path.join(
+            this.configDir,
+            configKey,
+            'book-manifest.yaml',
+        );
 
         let configContent: string;
 
         try {
             // Load book-specific manifest only
             configContent = await fs.readFile(bookSpecificPath, 'utf-8');
-            this.logger.info(LOG_COMPONENTS.CONFIG_SERVICE, 'Loaded book-specific manifest', {
-                configPath: bookSpecificPath,
-            });
+            this.logger.info(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+                'Loaded book-specific manifest',
+                {
+                    configPath: bookSpecificPath,
+                },
+            );
         } catch (error) {
             throw new AppError(
                 ERROR_CODES.CONFIG_INVALID,
@@ -289,14 +327,17 @@ export class BookStructureService {
             author: (bookStructure.author as string) || metadata.author,
             title: (bookStructure.title as string) || metadata.title,
             original: bookStructure.original as BookManifestInfo['original'],
-            textBeforeFirstChapter: bookStructure['text-before-first-chapter'] as string,
+            textBeforeFirstChapter: bookStructure[
+                'text-before-first-chapter'
+            ] as string,
             textAfterLastChapter: bookStructure['text-after-last-chapter'] as string,
             structure: bookStructure.structure as BookManifestInfo['structure'],
             footnotes: bookStructure.footnotes as BookManifestInfo['footnotes'],
         };
 
         // Only add bookIndex if it has a value
-        const bookIndexValue = (bookStructure['book-index'] as string) || metadata.bookIndex;
+        const bookIndexValue =
+            (bookStructure['book-index'] as string) || metadata.bookIndex;
         if (bookIndexValue) {
             result.bookIndex = bookIndexValue;
         }
@@ -311,7 +352,10 @@ export class BookStructureService {
         metadata: FilenameMetadata,
         inputFilePath?: string,
     ): Promise<BookManifestInfo> {
-        const defaultTemplatePath = path.join(this.configDir, DEFAULT_BOOK_MANIFEST_FILE);
+        const defaultTemplatePath = path.join(
+            this.configDir,
+            DEFAULT_BOOK_MANIFEST_FILE,
+        );
 
         try {
             // Load the default template
@@ -334,7 +378,10 @@ export class BookStructureService {
             const fileSize = await this.getFileSize(filePath);
 
             // Update the original section in the template
-            if (templateConfig.original && typeof templateConfig.original === 'object') {
+            if (
+                templateConfig.original &&
+                typeof templateConfig.original === 'object'
+            ) {
                 // Handle original as an object
                 const originalObj = templateConfig.original as Record<string, unknown>;
                 const updatedOriginal: Record<string, unknown> = {};
@@ -365,7 +412,11 @@ export class BookStructureService {
 
             // Save the new book-specific config file
             const configKey = this.getConfigKey(metadata);
-            const bookSpecificPath = path.join(this.configDir, configKey, 'book-manifest.yaml');
+            const bookSpecificPath = path.join(
+                this.configDir,
+                configKey,
+                'book-manifest.yaml',
+            );
 
             // Ensure config directory exists
             await fs.mkdir(path.dirname(bookSpecificPath), { recursive: true });
@@ -379,7 +430,9 @@ export class BookStructureService {
 
             await fs.writeFile(bookSpecificPath, yamlContent, 'utf-8');
 
-            const configLogger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
+            const configLogger = this.logger.getConfigLogger(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+            );
             configLogger.info(
                 {
                     author: metadata.author,
@@ -435,11 +488,17 @@ export class BookStructureService {
             // Get current file information
             const currentFileType = await this.determineFileType(inputFilePath);
             const currentFileSize = await this.getFileSize(inputFilePath);
-            const currentPageCount = await this.getPageCount(inputFilePath, currentFileType);
+            const currentPageCount = await this.getPageCount(
+                inputFilePath,
+                currentFileType,
+            );
 
             // Load the raw YAML to check original section
             const configKey = this.getConfigKey(metadata);
-            const configPath = path.join(this.configDir, `${configKey}${CONFIG_FILE_EXTENSION}`);
+            const configPath = path.join(
+                this.configDir,
+                `${configKey}${CONFIG_FILE_EXTENSION}`,
+            );
             const configContent = await fs.readFile(configPath, 'utf-8');
             const rawConfig = yaml.load(configContent) as BookManifestInfo;
 
@@ -468,7 +527,10 @@ export class BookStructureService {
                 }
 
                 // Compare page count (only for non-text files)
-                if (currentFileType !== 'text' && originalObj.pages !== currentPageCount) {
+                if (
+                    currentFileType !== 'text' &&
+                    originalObj.pages !== currentPageCount
+                ) {
                     changes = changes || {};
                     changes.pages = {
                         current: currentPageCount,
@@ -514,7 +576,10 @@ export class BookStructureService {
         inputFilePath: string,
     ): Promise<void> {
         const configKey = this.getConfigKey(metadata);
-        const configPath = path.join(this.configDir, `${configKey}${CONFIG_FILE_EXTENSION}`);
+        const configPath = path.join(
+            this.configDir,
+            `${configKey}${CONFIG_FILE_EXTENSION}`,
+        );
 
         // Load the raw YAML to preserve structure
         const configContent = await fs.readFile(configPath, 'utf-8');
@@ -761,7 +826,8 @@ export class BookStructureService {
             }
 
             // Merge all chunk responses
-            const mergedResponse = this.structureInferrer.mergeChunkResponses(chunkResponses);
+            const mergedResponse =
+                this.structureInferrer.mergeChunkResponses(chunkResponses);
 
             // Apply corrections to the original structure
             const correctedStructure = this.applyStructureCorrections(
@@ -890,7 +956,10 @@ export class BookStructureService {
         // Apply corrections if enabled
         if (options.enableCorrections) {
             for (const correction of aiResponse.corrections) {
-                if (correction.index >= 0 && correction.index < correctedStructure.length) {
+                if (
+                    correction.index >= 0 &&
+                    correction.index < correctedStructure.length
+                ) {
                     correctedStructure[correction.index] = correction.corrected;
                 }
             }

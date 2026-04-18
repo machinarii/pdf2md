@@ -23,7 +23,8 @@ export function checkForBookTextMarker(
     bookManifest?: BookManifestInfo,
     logger?: LoggerService,
 ): boolean {
-    const markerField = markerType === 'start' ? 'textBeforeFirstChapter' : 'textAfterLastChapter';
+    const markerField =
+        markerType === 'start' ? 'textBeforeFirstChapter' : 'textAfterLastChapter';
     const markerText = bookManifest?.[markerField];
 
     if (!markerText) {
@@ -36,12 +37,16 @@ export function checkForBookTextMarker(
     const found = normalizedText.includes(normalizedMarker);
 
     if (logger) {
-        logger.info(LOG_COMPONENTS.PIPELINE_MANAGER, `Book text ${markerType} marker check`, {
-            originalMarker: markerText,
-            normalizedMarker,
-            normalizedText: normalizedText.slice(-200),
-            found,
-        });
+        logger.info(
+            LOG_COMPONENTS.PIPELINE_MANAGER,
+            `Book text ${markerType} marker check`,
+            {
+                originalMarker: markerText,
+                normalizedMarker,
+                normalizedText: normalizedText.slice(-200),
+                found,
+            },
+        );
     }
 
     return found;

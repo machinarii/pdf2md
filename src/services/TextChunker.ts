@@ -49,7 +49,10 @@ export class TextChunker {
     /**
      * Divide text into overlapping chunks
      */
-    public chunkText(text: string, options: Partial<TextChunkingOptions> = {}): TextChunkingResult {
+    public chunkText(
+        text: string,
+        options: Partial<TextChunkingOptions> = {},
+    ): TextChunkingResult {
         const startTime = Date.now();
         const logger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
 
@@ -88,7 +91,10 @@ export class TextChunker {
 
             // Calculate chunk boundaries
             const chunkStart = currentPosition;
-            let chunkEnd = Math.min(chunkStart + chunkingOptions.chunkSize, text.length);
+            let chunkEnd = Math.min(
+                chunkStart + chunkingOptions.chunkSize,
+                text.length,
+            );
 
             // Preserve word boundaries if requested
             if (chunkingOptions.preserveWordBoundaries && chunkEnd < text.length) {
@@ -135,7 +141,8 @@ export class TextChunker {
         );
         const averageChunkSize =
             chunks.length > 0
-                ? chunks.reduce((sum, chunk) => sum + chunk.characterCount, 0) / chunks.length
+                ? chunks.reduce((sum, chunk) => sum + chunk.characterCount, 0) /
+                  chunks.length
                 : 0;
 
         const result: TextChunkingResult = {
@@ -209,7 +216,10 @@ export class TextChunker {
         }
 
         const totalWords = chunks.reduce((sum, chunk) => sum + chunk.wordCount, 0);
-        const totalCharacters = chunks.reduce((sum, chunk) => sum + chunk.characterCount, 0);
+        const totalCharacters = chunks.reduce(
+            (sum, chunk) => sum + chunk.characterCount,
+            0,
+        );
         const totalOverlap = chunks.reduce(
             (sum, chunk) => sum + chunk.overlapWithPrevious + chunk.overlapWithNext,
             0,

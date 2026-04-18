@@ -1,6 +1,4 @@
-import { LOG_COMPONENTS, SUPERSCRIPT_DETECTION } from '@/constants';
-import type { LoggerService } from '@/services/LoggerService';
-import type pino from 'pino';
+import { SUPERSCRIPT_DETECTION } from '@/constants';
 
 /**
  * OCR Symbol structure from Tesseract with superscript detection

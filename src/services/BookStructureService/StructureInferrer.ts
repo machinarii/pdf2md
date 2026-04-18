@@ -2,8 +2,8 @@ import { ERROR_CODES, LOG_COMPONENTS, STRUCTURE_INFERENCE_CONFIG } from '@/const
 import type { BookManifestInfo } from '@/types';
 import { AppError } from '@/utils/AppError';
 import type { LoggerService } from '../LoggerService';
+import { OllamaService } from '../OllamaService';
 import type { TextChunk } from '../TextChunker';
-import { DeepSeekService } from '../DeepSeekService';
 
 /**
  * Options for structure inference
@@ -62,11 +62,11 @@ export interface StructureInferenceResponse {
  */
 export class StructureInferrer {
     private readonly logger: LoggerService;
-    private readonly deepSeekService: DeepSeekService;
+    private readonly ollamaService: OllamaService;
 
     constructor(logger: LoggerService) {
         this.logger = logger;
-        this.deepSeekService = new DeepSeekService(logger);
+        this.ollamaService = new OllamaService(logger);
     }
 
     /**
@@ -83,7 +83,8 @@ export class StructureInferrer {
         // Use default options if not provided
         const inferenceOptions: InferenceOptions = {
             maxRetries: STRUCTURE_INFERENCE_CONFIG.DEFAULT_MAX_RETRIES,
-            confidenceThreshold: STRUCTURE_INFERENCE_CONFIG.DEFAULT_CONFIDENCE_THRESHOLD,
+            confidenceThreshold:
+                STRUCTURE_INFERENCE_CONFIG.DEFAULT_CONFIDENCE_THRESHOLD,
             enableNewEntries: STRUCTURE_INFERENCE_CONFIG.DEFAULT_ENABLE_NEW_ENTRIES,
             enableCorrections: STRUCTURE_INFERENCE_CONFIG.DEFAULT_ENABLE_CORRECTIONS,
             temperature: 0.1, // Low temperature for consistent results
@@ -102,9 +103,7 @@ export class StructureInferrer {
             // Generate prompt for AI
             const prompt = this.generatePrompt(chunk, bookStructure || []);
 
-            // TODO: Implement actual DeepSeek Chat API call in Phase 3
-            // For now, return a placeholder response
-            const response = await this.callDeepSeekAPI(prompt, inferenceOptions);
+            const response = await this.callOllamaAPI(prompt, inferenceOptions);
 
             const processingTime = Date.now() - startTime;
 
@@ -141,7 +140,7 @@ export class StructureInferrer {
     }
 
     /**
-     * Generate prompt for DeepSeek Chat API
+     * Generate prompt for the LLM
      */
     private generatePrompt(chunk: TextChunk, bookStructure: string[]): string {
         const structureText = bookStructure
@@ -199,53 +198,85 @@ Return your response as JSON with the following structure:
     }
 
     /**
-     * Call DeepSeek Chat API for structure inference
+     * Call Ollama for structure inference, with one JSON-parse retry.
      */
-    private async callDeepSeekAPI(
+    private async callOllamaAPI(
         prompt: string,
         options: InferenceOptions,
     ): Promise<StructureInferenceResponse> {
         const logger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
 
-        try {
-            logger.debug('Calling DeepSeek Chat API for structure inference', {
-                promptLength: prompt.length,
-                options,
-            });
+        const attempts = Math.max(1, Math.min(3, options.maxRetries + 1));
+        let lastParseError: unknown;
 
-            // Use the DeepSeekService to make the API call
-            const responseText = await this.deepSeekService.sendStructureInferenceRequest(prompt, {
-                temperature: options.temperature,
-                maxTokens: options.maxTokens,
-                retries: options.maxRetries,
-            });
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                logger.debug(
+                    { promptLength: prompt.length, attempt, attempts, options },
+                    'Calling Ollama for structure inference',
+                );
 
-            // Parse the AI response
-            const parsedResponse = this.parseAIResponse(responseText);
+                const responseText =
+                    await this.ollamaService.sendStructureInferenceRequest(prompt, {
+                        temperature: options.temperature,
+                        maxTokens: options.maxTokens,
+                    });
 
-            logger.debug('DeepSeek Chat API response received', {
-                matchedEntries: parsedResponse.matchedEntries.length,
-                newEntries: parsedResponse.newEntries.length,
-                corrections: parsedResponse.corrections.length,
-                confidence: parsedResponse.confidence,
-            });
+                const parsedResponse = this.parseAIResponse(responseText);
 
-            return parsedResponse;
-        } catch (error) {
-            logger.error('DeepSeek Chat API call failed', {
-                error: error instanceof Error ? error.message : String(error),
-                promptLength: prompt.length,
-            });
+                logger.debug(
+                    {
+                        matchedEntries: parsedResponse.matchedEntries.length,
+                        newEntries: parsedResponse.newEntries.length,
+                        corrections: parsedResponse.corrections.length,
+                        confidence: parsedResponse.confidence,
+                    },
+                    'Ollama structure inference response received',
+                );
 
-            // Return empty response on failure
-            return {
-                matchedEntries: [],
-                newEntries: [],
-                corrections: [],
-                confidence: 0.0,
-                processingTime: 0,
-            };
+                return parsedResponse;
+            } catch (error) {
+                lastParseError = error;
+                const message = error instanceof Error ? error.message : String(error);
+                const isParseError =
+                    error instanceof AppError &&
+                    error.code === ERROR_CODES.CONFIG_INVALID;
+
+                logger.warn(
+                    {
+                        attempt,
+                        attempts,
+                        error: message,
+                        promptLength: prompt.length,
+                    },
+                    isParseError
+                        ? 'Ollama returned invalid JSON, retrying'
+                        : 'Ollama call failed',
+                );
+
+                if (!isParseError || attempt === attempts) {
+                    break;
+                }
+            }
         }
+
+        logger.error(
+            {
+                error:
+                    lastParseError instanceof Error
+                        ? lastParseError.message
+                        : String(lastParseError),
+            },
+            'Ollama structure inference failed after retries',
+        );
+
+        return {
+            matchedEntries: [],
+            newEntries: [],
+            corrections: [],
+            confidence: 0.0,
+            processingTime: 0,
+        };
     }
 
     /**
@@ -339,7 +370,8 @@ Return your response as JSON with the following structure:
                 if (existingIndex === -1) {
                     merged.matchedEntries.push(entry);
                 } else if (
-                    entry.confidence > (merged.matchedEntries[existingIndex]?.confidence ?? 0)
+                    entry.confidence >
+                    (merged.matchedEntries[existingIndex]?.confidence ?? 0)
                 ) {
                     merged.matchedEntries[existingIndex] = entry;
                 }
@@ -356,7 +388,8 @@ Return your response as JSON with the following structure:
                 if (existingIndex === -1) {
                     merged.corrections.push(correction);
                 } else if (
-                    correction.confidence > (merged.corrections[existingIndex]?.confidence ?? 0)
+                    correction.confidence >
+                    (merged.corrections[existingIndex]?.confidence ?? 0)
                 ) {
                     merged.corrections[existingIndex] = correction;
                 }
@@ -367,7 +400,8 @@ Return your response as JSON with the following structure:
         }
 
         // Calculate average confidence
-        merged.confidence = responses.length > 0 ? totalConfidence / responses.length : 0;
+        merged.confidence =
+            responses.length > 0 ? totalConfidence / responses.length : 0;
         merged.processingTime = totalProcessingTime;
 
         return merged;

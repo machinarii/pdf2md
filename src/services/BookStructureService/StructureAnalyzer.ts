@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import {
     ERROR_CODES,
     LOG_COMPONENTS,
@@ -5,7 +6,6 @@ import {
     STRUCTURE_ANALYSIS_LEVELS,
     STRUCTURE_ANALYSIS_PATTERNS,
 } from '@/constants';
-import type { LoggerService } from '../LoggerService';
 import type {
     BookMetadata,
     BookStructure,
@@ -23,7 +23,7 @@ import type {
     StructureQuality,
 } from '@/types';
 import { AppError } from '@/utils/AppError';
-import { v4 as uuidv4 } from 'uuid';
+import type { LoggerService } from '../LoggerService';
 
 /**
  * Service for analyzing book structure and extracting hierarchical information
@@ -44,7 +44,9 @@ export class StructureAnalyzer {
         metadata: BookMetadata,
     ): Promise<StructureAnalysisResult> {
         const startTime = Date.now();
-        const analysisLogger = this.logger.getTextExtractionLogger(LOG_COMPONENTS.PIPELINE_MANAGER);
+        const analysisLogger = this.logger.getTextExtractionLogger(
+            LOG_COMPONENTS.PIPELINE_MANAGER,
+        );
 
         analysisLogger.info(
             {
@@ -128,7 +130,13 @@ export class StructureAnalyzer {
             for (const pattern of STRUCTURE_ANALYSIS_PATTERNS.CHAPTER_HEADERS) {
                 const match = line.match(pattern);
                 if (match) {
-                    const header = this.createHeader(match, line, i, 'chapter', pattern.source);
+                    const header = this.createHeader(
+                        match,
+                        line,
+                        i,
+                        'chapter',
+                        pattern.source,
+                    );
                     if (header) headers.push(header);
                     break;
                 }
@@ -137,7 +145,13 @@ export class StructureAnalyzer {
             for (const pattern of STRUCTURE_ANALYSIS_PATTERNS.LECTURE_HEADERS) {
                 const match = line.match(pattern);
                 if (match) {
-                    const header = this.createHeader(match, line, i, 'lecture', pattern.source);
+                    const header = this.createHeader(
+                        match,
+                        line,
+                        i,
+                        'lecture',
+                        pattern.source,
+                    );
                     if (header) headers.push(header);
                     break;
                 }
@@ -146,7 +160,13 @@ export class StructureAnalyzer {
             for (const pattern of STRUCTURE_ANALYSIS_PATTERNS.SECTION_HEADERS) {
                 const match = line.match(pattern);
                 if (match) {
-                    const header = this.createHeader(match, line, i, 'section', pattern.source);
+                    const header = this.createHeader(
+                        match,
+                        line,
+                        i,
+                        'section',
+                        pattern.source,
+                    );
                     if (header) headers.push(header);
                     break;
                 }
@@ -221,7 +241,10 @@ export class StructureAnalyzer {
         // Look for numeric or roman numeral patterns
         for (let i = 1; i < match.length; i++) {
             const matchPart = match[i];
-            if (matchPart && (/^\d+$/.test(matchPart) || /^[IVXLCDM]+$/i.test(matchPart))) {
+            if (
+                matchPart &&
+                (/^\d+$/.test(matchPart) || /^[IVXLCDM]+$/i.test(matchPart))
+            ) {
                 return matchPart;
             }
         }
@@ -249,14 +272,19 @@ export class StructureAnalyzer {
     /**
      * Calculate header confidence
      */
-    private calculateHeaderConfidence(match: RegExpMatchArray, line: string, type: string): number {
+    private calculateHeaderConfidence(
+        match: RegExpMatchArray,
+        line: string,
+        type: string,
+    ): number {
         let confidence = STRUCTURE_ANALYSIS_CONFIDENCE.MEDIUM;
 
         // Boost confidence for well-formed headers
         if (match[1] && match[2]) confidence += 0.2;
         if (line.trim().length < 100) confidence += 0.1;
         if (type === 'chapter' && /kapitel|chapter/i.test(line)) confidence += 0.2;
-        if (type === 'lecture' && /vortrag|lecture|vorlesung/i.test(line)) confidence += 0.2;
+        if (type === 'lecture' && /vortrag|lecture|vorlesung/i.test(line))
+            confidence += 0.2;
 
         return Math.min(1.0, confidence);
     }
@@ -277,7 +305,12 @@ export class StructureAnalyzer {
             for (const pattern of STRUCTURE_ANALYSIS_PATTERNS.FOOTNOTE_MARKERS) {
                 const match = line.match(pattern);
                 if (match) {
-                    const footnote = this.createFootnote(match, line, i, pattern.source);
+                    const footnote = this.createFootnote(
+                        match,
+                        line,
+                        i,
+                        pattern.source,
+                    );
                     if (footnote) footnotes.push(footnote);
                     break;
                 }
@@ -367,7 +400,10 @@ export class StructureAnalyzer {
     /**
      * Create a paragraph from lines
      */
-    private createParagraph(lines: string[], startLineNumber: number): StructureParagraph | null {
+    private createParagraph(
+        lines: string[],
+        startLineNumber: number,
+    ): StructureParagraph | null {
         const text = lines.join(' ').trim();
         if (text.length === 0) return null;
 
@@ -525,7 +561,8 @@ export class StructureAnalyzer {
         }
 
         if (styles.size === 0) return 'numeric';
-        if (styles.size === 1) return Array.from(styles)[0] as 'numeric' | 'roman' | 'alphabetic';
+        if (styles.size === 1)
+            return Array.from(styles)[0] as 'numeric' | 'roman' | 'alphabetic';
         return 'mixed';
     }
 
@@ -573,7 +610,10 @@ export class StructureAnalyzer {
     /**
      * Assess structure quality
      */
-    private assessStructureQuality(structure: BookStructure, lines: string[]): StructureQuality {
+    private assessStructureQuality(
+        structure: BookStructure,
+        lines: string[],
+    ): StructureQuality {
         const issues: StructureIssue[] = [];
         let score = 100;
         const confidence = STRUCTURE_ANALYSIS_CONFIDENCE.HIGH;
@@ -602,7 +642,10 @@ export class StructureAnalyzer {
         const footnoteRefs = structure.footnotes.map((f) => f.reference);
         const textContent = lines.join(' ');
         for (const ref of footnoteRefs) {
-            if (!textContent.includes(`[${ref}]`) && !textContent.includes(`(${ref})`)) {
+            if (
+                !textContent.includes(`[${ref}]`) &&
+                !textContent.includes(`(${ref})`)
+            ) {
                 issues.push({
                     type: 'orphaned_footnotes',
                     description: `Footnote ${ref} has no reference in text`,
@@ -627,7 +670,10 @@ export class StructureAnalyzer {
     /**
      * Analyze patterns in the structure
      */
-    private analyzePatterns(structure: BookStructure, lines: string[]): StructureAnalysis {
+    private analyzePatterns(
+        structure: BookStructure,
+        lines: string[],
+    ): StructureAnalysis {
         const headerPatterns = this.analyzeHeaderPatterns(structure.headers);
         const footnotePatterns = this.analyzeFootnotePatterns(structure.footnotes);
         const paragraphPatterns = this.analyzeParagraphPatterns(structure.paragraphs);
@@ -708,7 +754,9 @@ export class StructureAnalyzer {
     /**
      * Analyze paragraph patterns
      */
-    private analyzeParagraphPatterns(paragraphs: StructureParagraph[]): PatternAnalysis[] {
+    private analyzeParagraphPatterns(
+        paragraphs: StructureParagraph[],
+    ): PatternAnalysis[] {
         const typeCount = paragraphs.reduce(
             (counts, p) => {
                 counts[p.type] = (counts[p.type] || 0) + 1;

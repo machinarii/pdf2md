@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import pdfParse from 'pdf-parse';
 import { ERROR_CODES, LOG_COMPONENTS, MESSAGE_TEMPLATES } from '@/constants';
 import type { LoggerService } from '@/services/LoggerService';
 import { formatLogMessage } from '@/services/LoggerService';
@@ -9,7 +10,6 @@ import type {
     TextQuality,
 } from '@/types';
 import { AppError } from '@/utils/AppError';
-import pdfParse from 'pdf-parse';
 
 /**
  * Handler for extracting text from PDF files

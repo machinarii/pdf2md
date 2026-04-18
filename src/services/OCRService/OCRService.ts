@@ -1,13 +1,21 @@
-import { LOG_COMPONENTS, OCR_PAGE_HEIGHT, OCR_PAGE_WIDTH, OCR_WHITELIST } from '@/constants';
-import type { ConfigService } from '@/services/ConfigService';
-import type { LoggerService } from '@/services/LoggerService';
-import type { BookManifestInfo, FileInfo, FilenameMetadata, BookStructureSection } from '@/types';
-import { fixGermanUmlautErrors } from '@/utils/TextUtils';
 import type { Worker } from 'tesseract.js';
 import Tesseract from 'tesseract.js';
-import { GetTextAndStructureFromOcr } from './GetTextAndStructureFromOcr';
-import { checkForBookTextStartMarker, checkForBookTextEndMarker } from './checkForBookTextMarkers';
+import {
+    LOG_COMPONENTS,
+    OCR_PAGE_HEIGHT,
+    OCR_PAGE_WIDTH,
+    OCR_WHITELIST,
+} from '@/constants';
 import type { BookStructureService } from '@/services/BookStructureService';
+import type { ConfigService } from '@/services/ConfigService';
+import type { LoggerService } from '@/services/LoggerService';
+import type { BookManifestInfo, FileInfo, FilenameMetadata } from '@/types';
+import { fixGermanUmlautErrors } from '@/utils/TextUtils';
+import {
+    checkForBookTextEndMarker,
+    checkForBookTextStartMarker,
+} from './checkForBookTextMarkers';
+import { GetTextAndStructureFromOcr } from './GetTextAndStructureFromOcr';
 
 /**
  * OCR result interface with structured text recognition
@@ -160,13 +168,17 @@ export class OCRService {
                 return {
                     structuredText: '',
                     pageCount: 0,
-                    errors: ['Non-PDF files not fully supported in current implementation'],
+                    errors: [
+                        'Non-PDF files not fully supported in current implementation',
+                    ],
                 };
             } catch (workerError) {
                 // Handle worker-specific errors (like PDF reading issues)
                 throw new Error(
                     `OCR processing failed: ${
-                        workerError instanceof Error ? workerError.message : String(workerError)
+                        workerError instanceof Error
+                            ? workerError.message
+                            : String(workerError)
                     }`,
                 );
             } finally {
@@ -207,7 +219,10 @@ export class OCRService {
         bookManifest?: BookManifestInfo,
         options?: OCROptions,
     ): Promise<OCRResult> {
-        const ocrLogger = this.logger.getTaggedLogger(LOG_COMPONENTS.PIPELINE_MANAGER, 'pdf_ocr');
+        const ocrLogger = this.logger.getTaggedLogger(
+            LOG_COMPONENTS.PIPELINE_MANAGER,
+            'pdf_ocr',
+        );
 
         try {
             // Import pdf2pic dynamically
@@ -404,15 +419,22 @@ export class OCRService {
                     }
                 } catch (pageError) {
                     const errorMsg = `Failed to process page ${pageNumber}: ${
-                        pageError instanceof Error ? pageError.message : String(pageError)
+                        pageError instanceof Error
+                            ? pageError.message
+                            : String(pageError)
                     }`;
                     errors.push(errorMsg);
                     console.log(
                         `❌ Page ${pageNumber} failed: ${
-                            pageError instanceof Error ? pageError.message : String(pageError)
+                            pageError instanceof Error
+                                ? pageError.message
+                                : String(pageError)
                         }`,
                     );
-                    ocrLogger.warn({ pageNumber, error: errorMsg }, 'Page processing failed');
+                    ocrLogger.warn(
+                        { pageNumber, error: errorMsg },
+                        'Page processing failed',
+                    );
                 }
             }
 
@@ -438,12 +460,15 @@ export class OCRService {
             );
 
             if (errors.length > 0) {
-                console.log(`⚠️  ${errors.length} pages had errors - check logs for details`);
+                console.log(
+                    `⚠️  ${errors.length} pages had errors - check logs for details`,
+                );
             }
 
             // Apply German umlaut corrections to structured text
             console.log('🔤 Applying German umlaut corrections...');
-            const fullStructuredText = scanResults.textWithHeaders + scanResults.footnoteText;
+            const fullStructuredText =
+                scanResults.textWithHeaders + scanResults.footnoteText;
             const { correctedText: correctedStructuredText } = fixGermanUmlautErrors(
                 fullStructuredText,
                 this.logger,
@@ -532,7 +557,10 @@ export class OCRService {
         const firstCharOfSecond = secondText.charAt(0);
 
         // Check if last character is hyphen and first character is lowercase
-        if (lastCharOfFirst === '-' && firstCharOfSecond === firstCharOfSecond.toLowerCase()) {
+        if (
+            lastCharOfFirst === '-' &&
+            firstCharOfSecond === firstCharOfSecond.toLowerCase()
+        ) {
             // Remove hyphen and glue the texts together
             return trimmedFirstText.slice(0, -1) + secondText;
         }
@@ -543,7 +571,10 @@ export class OCRService {
     /**
      * Apply text removal patterns to clean text
      */
-    private async applyTextRemovalPatterns(text: string, bookType: string): Promise<string> {
+    private async applyTextRemovalPatterns(
+        text: string,
+        bookType: string,
+    ): Promise<string> {
         try {
             // Load book type configuration to get text removal patterns
             const bookTypesConfig = await this.configService.loadBookTypesConfig();
@@ -583,7 +614,8 @@ export class OCRService {
                         'Failed to apply text removal pattern',
                         {
                             pattern,
-                            error: error instanceof Error ? error.message : String(error),
+                            error:
+                                error instanceof Error ? error.message : String(error),
                         },
                     );
                 }

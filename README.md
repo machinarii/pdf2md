@@ -5,7 +5,9 @@ A sophisticated Node.js/TypeScript CLI tool for automated book processing with A
 ## Features
 
 -   🔄 **Multi-Phase Pipeline**: 4 main phases with comprehensive text processing
--   🤖 **AI Integration**: DeepSeek API integration for text cleanup
+-   🤖 **Local LLM**: Ollama integration (OpenAI-compatible `/v1` API)
+-   🧹 **Deterministic Pre-LLM Cleanup**: Ligature/quote normalization, hyphen rejoining,
+        header/footer dedup, OCR artifact fixes — runs before any LLM call to save tokens
 -   📊 **Multiple Format Support**: PDF, EPUB, and TXT input formats
 -   🔧 **Configuration Management**: YAML-based config with environment variable support
 -   📝 **Tagged Logging**: Pino-based logging with component-specific log levels
@@ -77,12 +79,29 @@ Configuration files are automatically loaded from the `configs/` directory based
 -   `configs/<author>#<title>.config` - Book-specific configuration
 -   `configs/default.config` - Default configuration
 
+### Prerequisites
+
+-   Node version matching `.nvmrc` (current LTS)
+-   [Ollama](https://ollama.com) installed and running
+-   Model pulled locally, e.g. `ollama pull qwen3:32b`
+
 ### Environment Variables
 
--   `DEEPSEEK_API_KEY` - DeepSeek API key (required)
+-   `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default: `http://localhost:11434/v1`)
+-   `OLLAMA_MODEL` - Model name (default: `qwen3:32b`)
+-   `OLLAMA_NUM_CTX` - Context window in tokens (default: `32768`)
 -   `LOG_LEVEL` - Global log level (debug, info, warn, error, fatal)
 -   `OUTPUT_DIR` - Default output directory
 -   `CONFIG_DIR` - Configuration directory path
+
+Example:
+
+```bash
+export OLLAMA_BASE_URL=http://localhost:11434/v1
+export OLLAMA_MODEL=qwen3:32b
+export OLLAMA_NUM_CTX=32768
+clean-book sample-book.txt
+```
 
 ## Processing Phases
 
@@ -90,6 +109,9 @@ Configuration files are automatically loaded from the `configs/` directory based
 
 -   Text extraction from various formats
 -   PDF OCR processing with comparison
+-   **Deterministic text cleanup** (`TextCleanerService`) runs on every chunk before
+    the LLM sees it: ligature / smart-quote normalization, hyphen-break rejoining,
+    repeated header/footer removal, page-number stripping, OCR artifact fixes
 -   Metadata generation
 -   Chapter recognition
 -   Footnote extraction
@@ -97,7 +119,7 @@ Configuration files are automatically loaded from the `configs/` directory based
 ### Phase 2: Text Normalization & AI Cleaning
 
 -   Heading normalization
--   AI-powered text cleanup
+-   Local LLM text cleanup via Ollama
 -   Safe text replacements
 -   Spell checking
 

@@ -16,7 +16,7 @@ Step 3 performs AI-powered book structure inference to correct and enhance Table
 Main orchestrator that coordinates the entire structure inference process:
 - Loads existing book structure from book-manifest.yaml
 - Processes text in overlapping chunks
-- Coordinates AI analysis via DeepSeek Chat
+- Coordinates AI analysis via Ollama
 - Applies corrections and saves updated structure
 
 ### StructureValidator
@@ -51,7 +51,7 @@ Tracks execution metrics and progress:
 1. **Load Structure**: Read existing book structure from manifest
 2. **Validate Input**: Check structure format and consistency
 3. **Chunk Text**: Divide inference text into overlapping chunks
-4. **AI Analysis**: Send chunks to DeepSeek Chat for structure matching
+4. **AI Analysis**: Send chunks to Ollama for structure matching
 5. **Merge Results**: Combine chunk responses into unified result
 6. **Apply Corrections**: Update structure with AI-suggested changes
 7. **Validate Output**: Check corrected structure for consistency
@@ -95,10 +95,11 @@ clean-book --infer-text text.txt --chunk-size 3000 --confidence 0.8 input.pdf
 
 ## AI Integration
 
-### DeepSeek Chat Model
-- **Endpoint**: Uses DEEPSEEK_REST_API_URI environment variable
-- **API Key**: Uses DEEPSEEK_REST_API_KEY environment variable
-- **Model**: DeepSeek Chat for structure analysis
+### Ollama Model (OpenAI-compatible `/v1` API)
+- **Endpoint**: `OLLAMA_BASE_URL` env var (default `http://localhost:11434/v1`)
+- **Model**: `OLLAMA_MODEL` env var (default `qwen3:32b`)
+- **Context window**: `OLLAMA_NUM_CTX` env var (default `32768`)
+- **Response format**: `{ type: 'json_object' }` enforced for structure inference
 - **Prompt Strategy**: Structured prompts for TOC and paragraph matching
 
 ### Prompt Template
@@ -140,10 +141,11 @@ Instructions:
 
 ## Error Handling
 
-### DeepSeek Service Failures
-- **Strategy**: Exit application (per project rules)
-- **Implementation**: No fallback mechanisms
-- **Logging**: Detailed error information before exit
+### Ollama Service Failures
+- **Strategy**: Graceful degradation — return an empty structure-inference result
+- **Implementation**: 1 retry on ECONNREFUSED at the HTTP layer + 1 retry on invalid
+  JSON response at the inference layer
+- **Logging**: Warnings on retries, error with details when retries are exhausted
 
 ### Text Processing Errors
 - **Strategy**: Graceful degradation
@@ -163,7 +165,7 @@ Instructions:
 - **Overlap**: 20% overlap to handle boundary conditions
 
 ### Caching
-- **Chunk Results**: Cache DeepSeek responses for debugging
+- **Chunk Results**: Cache Ollama responses for debugging
 - **Structure Updates**: Incremental updates to avoid full rewrites
 
 ### Progress Tracking
@@ -221,7 +223,7 @@ This step replaces the previous "Text Auto Correction" functionality with AI-pow
 
 ## Dependencies
 
-- **DeepSeek Service**: For AI-powered structure analysis
+- **Ollama Service**: For local AI-powered structure analysis
 - **BookStructureService**: For structure loading and saving
 - **TextChunker**: For text processing
 - **LoggerService**: For comprehensive logging
@@ -236,7 +238,7 @@ This step replaces the previous "Text Auto Correction" functionality with AI-pow
 
 ### Integration Tests
 - End-to-end structure inference with sample books
-- DeepSeek Chat API integration testing
+- Ollama API integration testing
 - Pipeline integration testing
 
 ### Test Data

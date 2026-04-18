@@ -98,7 +98,9 @@ export class BookTypesService {
         const typeConfig = bookTypes[bookType];
 
         if (!typeConfig) {
-            const configLogger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
+            const configLogger = this.logger.getConfigLogger(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+            );
             configLogger.warn(
                 { bookType, availableTypes: Object.keys(bookTypes) },
                 'Unknown book type, falling back to default',
@@ -115,7 +117,9 @@ export class BookTypesService {
     /**
      * Get header type configuration for a specific book type
      */
-    public async getHeaderTypeConfig(bookType: string): Promise<HeaderTypeConfig | null> {
+    public async getHeaderTypeConfig(
+        bookType: string,
+    ): Promise<HeaderTypeConfig | null> {
         const bookTypes = await this.loadBookTypes();
         const typeConfig = bookTypes[bookType];
 
@@ -169,7 +173,10 @@ export class BookTypesService {
                 );
             }
 
-            if (!typeConfig['header-type'] || typeof typeConfig['header-type'] !== 'object') {
+            if (
+                !typeConfig['header-type'] ||
+                typeof typeConfig['header-type'] !== 'object'
+            ) {
                 configLogger.warn(
                     { typeName },
                     'Book type missing or invalid header-type configuration',
@@ -191,4 +198,4 @@ export class BookTypesService {
     }
 }
 
-export type { BookTypeConfig, HeaderTypeConfig, BookTypesConfig };
+export type { BookTypeConfig, BookTypesConfig, HeaderTypeConfig };

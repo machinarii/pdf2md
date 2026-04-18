@@ -66,8 +66,15 @@ async function quickTesseractDebug(): Promise<void> {
                 const tesseractData = ocrResult.data;
 
                 // Save individual page data immediately
-                const pageJsonPath = join(outputDir, `page-${pageNum}-data-${timestamp}.json`);
-                writeFileSync(pageJsonPath, JSON.stringify(tesseractData, null, 2), 'utf8');
+                const pageJsonPath = join(
+                    outputDir,
+                    `page-${pageNum}-data-${timestamp}.json`,
+                );
+                writeFileSync(
+                    pageJsonPath,
+                    JSON.stringify(tesseractData, null, 2),
+                    'utf8',
+                );
                 console.log(
                     `   💾 Page ${pageNum} data saved to: page-${pageNum}-data-${timestamp}.json`,
                 );
@@ -81,7 +88,8 @@ async function quickTesseractDebug(): Promise<void> {
                     blocks: tesseractData.blocks?.length || 0,
                     paragraphs:
                         tesseractData.blocks?.reduce(
-                            (sum: number, block: any) => sum + (block.paragraphs?.length || 0),
+                            (sum: number, block: any) =>
+                                sum + (block.paragraphs?.length || 0),
                             0,
                         ) || 0,
                     lines:
@@ -89,7 +97,8 @@ async function quickTesseractDebug(): Promise<void> {
                             (sum: number, block: any) =>
                                 sum +
                                 (block.paragraphs?.reduce(
-                                    (pSum: number, para: any) => pSum + (para.lines?.length || 0),
+                                    (pSum: number, para: any) =>
+                                        pSum + (para.lines?.length || 0),
                                     0,
                                 ) || 0),
                             0,
@@ -100,9 +109,12 @@ async function quickTesseractDebug(): Promise<void> {
 
                     // Check for specific patterns the user mentioned
                     hasProblematicPatterns: {
-                        'Das Bedeutsame': tesseractData.text?.includes('Das Bedeutsame') || false,
-                        'Indem wir nun': tesseractData.text?.includes('Indem wir nun') || false,
-                        'alles hier An-': tesseractData.text?.includes('alles hier An-') || false,
+                        'Das Bedeutsame':
+                            tesseractData.text?.includes('Das Bedeutsame') || false,
+                        'Indem wir nun':
+                            tesseractData.text?.includes('Indem wir nun') || false,
+                        'alles hier An-':
+                            tesseractData.text?.includes('alles hier An-') || false,
                         'zeigt sich schon':
                             tesseractData.text?.includes('zeigt sich schon') || false,
                     },
@@ -143,23 +155,35 @@ async function quickTesseractDebug(): Promise<void> {
                 averageConfidence:
                     allPagesData.reduce((sum, page) => sum + page.confidence, 0) /
                     allPagesData.length,
-                totalTextLength: allPagesData.reduce((sum, page) => sum + page.textLength, 0),
+                totalTextLength: allPagesData.reduce(
+                    (sum, page) => sum + page.textLength,
+                    0,
+                ),
                 totalBlocks: allPagesData.reduce((sum, page) => sum + page.blocks, 0),
-                totalParagraphs: allPagesData.reduce((sum, page) => sum + page.paragraphs, 0),
+                totalParagraphs: allPagesData.reduce(
+                    (sum, page) => sum + page.paragraphs,
+                    0,
+                ),
                 totalLines: allPagesData.reduce((sum, page) => sum + page.lines, 0),
             },
             pages: allPagesData,
         };
 
         writeFileSync(analysisPath, JSON.stringify(combinedData, null, 2), 'utf8');
-        console.log(`\n💾 Combined analysis saved to: first-ten-pages-${timestamp}.json`);
+        console.log(
+            `\n💾 Combined analysis saved to: first-ten-pages-${timestamp}.json`,
+        );
 
         // Show summary
         console.log('\n📊 QUICK DEBUG SUMMARY');
         console.log('='.repeat(25));
         console.log(`✅ Pages: ${allPagesData.length}`);
-        console.log(`📊 Avg confidence: ${Math.round(combinedData.summary.averageConfidence)}%`);
-        console.log(`🔤 Total chars: ${combinedData.summary.totalTextLength.toLocaleString()}`);
+        console.log(
+            `📊 Avg confidence: ${Math.round(combinedData.summary.averageConfidence)}%`,
+        );
+        console.log(
+            `🔤 Total chars: ${combinedData.summary.totalTextLength.toLocaleString()}`,
+        );
         console.log(
             `📋 Structure: ${combinedData.summary.totalBlocks} blocks, ${combinedData.summary.totalParagraphs} paragraphs, ${combinedData.summary.totalLines} lines`,
         );
@@ -178,9 +202,14 @@ async function quickTesseractDebug(): Promise<void> {
             }
         }
 
-        console.log('\n🎉 Quick debug complete! Check JSON files for detailed structure.');
+        console.log(
+            '\n🎉 Quick debug complete! Check JSON files for detailed structure.',
+        );
     } catch (error) {
-        console.error('❌ Debug failed:', error instanceof Error ? error.message : String(error));
+        console.error(
+            '❌ Debug failed:',
+            error instanceof Error ? error.message : String(error),
+        );
         process.exit(1);
     }
 }

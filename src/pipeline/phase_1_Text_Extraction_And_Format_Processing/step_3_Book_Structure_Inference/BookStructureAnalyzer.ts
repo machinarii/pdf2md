@@ -1,10 +1,16 @@
 import { ERROR_CODES, LOG_COMPONENTS, STRUCTURE_INFERENCE_CONFIG } from '@/constants';
+import {
+    BookStructureService,
+    type StructureInferenceOptions,
+    type StructureInferenceResult,
+} from '@/services/BookStructureService/BookStructureService';
+import {
+    type StructureInferenceResponse,
+    StructureInferrer,
+} from '@/services/BookStructureService/StructureInferrer';
+import type { LoggerService } from '@/services/LoggerService';
 import type { BookManifestInfo, FilenameMetadata } from '@/types';
 import { AppError } from '@/utils/AppError';
-import type { LoggerService } from '@/services/LoggerService';
-import type { TextChunk } from '@/services/TextChunker';
-import { BookStructureService, type StructureInferenceOptions, type StructureInferenceResult } from '@/services/BookStructureService/BookStructureService';
-import { StructureInferrer, type StructureInferenceResponse } from '@/services/BookStructureService/StructureInferrer';
 import { StructureValidator } from './StructureValidator';
 
 /**
@@ -50,7 +56,8 @@ export class BookStructureAnalyzer {
             });
 
             // Validate existing structure
-            const validationResult = this.structureValidator.validateStructure(originalStructure);
+            const validationResult =
+                this.structureValidator.validateStructure(originalStructure);
             if (!validationResult.isValid) {
                 logger.warn('Existing structure has validation issues', {
                     errors: validationResult.errors,
@@ -60,11 +67,14 @@ export class BookStructureAnalyzer {
             // Use default options if not provided
             const inferenceOptions: StructureInferenceOptions = {
                 chunkSize: STRUCTURE_INFERENCE_CONFIG.DEFAULT_CHUNK_SIZE,
-                overlapPercentage: STRUCTURE_INFERENCE_CONFIG.DEFAULT_OVERLAP_PERCENTAGE,
+                overlapPercentage:
+                    STRUCTURE_INFERENCE_CONFIG.DEFAULT_OVERLAP_PERCENTAGE,
                 maxRetries: STRUCTURE_INFERENCE_CONFIG.DEFAULT_MAX_RETRIES,
-                confidenceThreshold: STRUCTURE_INFERENCE_CONFIG.DEFAULT_CONFIDENCE_THRESHOLD,
+                confidenceThreshold:
+                    STRUCTURE_INFERENCE_CONFIG.DEFAULT_CONFIDENCE_THRESHOLD,
                 enableNewEntries: STRUCTURE_INFERENCE_CONFIG.DEFAULT_ENABLE_NEW_ENTRIES,
-                enableCorrections: STRUCTURE_INFERENCE_CONFIG.DEFAULT_ENABLE_CORRECTIONS,
+                enableCorrections:
+                    STRUCTURE_INFERENCE_CONFIG.DEFAULT_ENABLE_CORRECTIONS,
                 ...options,
             };
 
@@ -76,17 +86,20 @@ export class BookStructureAnalyzer {
             );
 
             // Merge chunk responses
-            const mergedResponse = this.structureInferrer.mergeChunkResponses(chunkResponses);
+            const mergedResponse =
+                this.structureInferrer.mergeChunkResponses(chunkResponses);
 
             // Apply corrections to structure
-            const correctedStructure = this.bookStructureService['applyStructureCorrections'](
-                originalStructure,
-                mergedResponse,
-                inferenceOptions,
-            );
+            const correctedStructure =
+                this.bookStructureService.applyStructureCorrections(
+                    originalStructure,
+                    mergedResponse,
+                    inferenceOptions,
+                );
 
             // Validate corrected structure
-            const finalValidation = this.structureValidator.validateStructure(correctedStructure);
+            const finalValidation =
+                this.structureValidator.validateStructure(correctedStructure);
 
             const processingTime = Date.now() - startTime;
 
@@ -110,8 +123,8 @@ export class BookStructureAnalyzer {
                 success: true,
                 originalStructure,
                 correctedStructure,
-                newEntries: mergedResponse.newEntries.map(entry => entry.text),
-                corrections: mergedResponse.corrections.map(correction => ({
+                newEntries: mergedResponse.newEntries.map((entry) => entry.text),
+                corrections: mergedResponse.corrections.map((correction) => ({
                     index: correction.index,
                     original: correction.original,
                     corrected: correction.corrected,
@@ -149,10 +162,13 @@ export class BookStructureAnalyzer {
         const logger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
 
         // Create text chunks
-        const chunkingResult = this.bookStructureService.textChunker.chunkText(textSource, {
-            chunkSize: options.chunkSize,
-            overlapPercentage: options.overlapPercentage,
-        });
+        const chunkingResult = this.bookStructureService.textChunker.chunkText(
+            textSource,
+            {
+                chunkSize: options.chunkSize,
+                overlapPercentage: options.overlapPercentage,
+            },
+        );
         const chunks = chunkingResult.chunks;
 
         logger.info('Created text chunks for analysis', {
@@ -233,4 +249,4 @@ export class BookStructureAnalyzer {
             estimatedTimeRemaining: 0,
         };
     }
-} 
+}

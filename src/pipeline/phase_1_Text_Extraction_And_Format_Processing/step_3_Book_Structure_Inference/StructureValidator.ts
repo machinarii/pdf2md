@@ -1,7 +1,6 @@
-import { ERROR_CODES, LOG_COMPONENTS } from '@/constants';
-import type { BookManifestInfo } from '@/types';
-import { AppError } from '@/utils/AppError';
+import { LOG_COMPONENTS } from '@/constants';
 import type { LoggerService } from '@/services/LoggerService';
+import type { BookManifestInfo } from '@/types';
 
 /**
  * Validation result for book structure
@@ -46,7 +45,9 @@ export class StructureValidator {
     /**
      * Validate entire book structure
      */
-    public validateStructure(structure: BookManifestInfo['bookStructure']): StructureValidationResult {
+    public validateStructure(
+        structure: BookManifestInfo['bookStructure'],
+    ): StructureValidationResult {
         const logger = this.logger.getConfigLogger(LOG_COMPONENTS.CONFIG_SERVICE);
         const errors: string[] = [];
         const warnings: string[] = [];
@@ -108,7 +109,10 @@ export class StructureValidator {
     /**
      * Validate individual structure entry
      */
-    public validateEntry(entry: string, index: number): {
+    public validateEntry(
+        entry: string,
+        index: number,
+    ): {
         isValid: boolean;
         errors: string[];
         warnings: string[];
@@ -160,12 +164,12 @@ export class StructureValidator {
      */
     private isTOCEntry(entry: string): boolean {
         const trimmed = entry.trim();
-        
+
         // TOC entries typically have:
         // 1. Chapter/section numbers (e.g., "1.", "1.1.", "Chapter 1")
         // 2. Title-like formatting
         // 3. No paragraph-specific markers
-        
+
         const tocPatterns = [
             /^\d+\./, // "1.", "2.", etc.
             /^\d+\.\d+/, // "1.1.", "2.3.", etc.
@@ -175,7 +179,7 @@ export class StructureValidator {
             /^Book\s+\d+/i, // "Book 1", "BOOK 2", etc.
         ];
 
-        return tocPatterns.some(pattern => pattern.test(trimmed));
+        return tocPatterns.some((pattern) => pattern.test(trimmed));
     }
 
     /**
@@ -183,12 +187,12 @@ export class StructureValidator {
      */
     private isParagraphEntry(entry: string): boolean {
         const trimmed = entry.trim();
-        
+
         // Paragraph entries typically have:
         // 1. Paragraph numbers (e.g., "§1", "¶1", "P1")
         // 2. Short content indicators
         // 3. Specific paragraph markers
-        
+
         const paragraphPatterns = [
             /^§\d+/, // "§1", "§2", etc.
             /^¶\d+/, // "¶1", "¶2", etc.
@@ -196,19 +200,19 @@ export class StructureValidator {
             /^Paragraph\s+\d+/i, // "Paragraph 1", "PARAGRAPH 2", etc.
         ];
 
-        return paragraphPatterns.some(pattern => pattern.test(trimmed));
+        return paragraphPatterns.some((pattern) => pattern.test(trimmed));
     }
 
     /**
      * Validate TOC entry
      */
-    private validateTOCEntry(entry: string, index: number): TOCValidationResult {
+    private validateTOCEntry(entry: string, _index: number): TOCValidationResult {
         const errors: string[] = [];
         const warnings: string[] = [];
 
         // Extract TOC level
         const level = this.getTOCLevel(entry);
-        
+
         // Check for common TOC issues
         if (entry.length > 200) {
             warnings.push('TOC entry is very long (may be paragraph content)');
@@ -220,7 +224,9 @@ export class StructureValidator {
 
         // Check for proper formatting
         if (!/^[A-Za-z0-9§¶]/.test(entry.trim())) {
-            warnings.push('TOC entry should start with alphanumeric character or special marker');
+            warnings.push(
+                'TOC entry should start with alphanumeric character or special marker',
+            );
         }
 
         // Check for subsections
@@ -237,13 +243,16 @@ export class StructureValidator {
     /**
      * Validate paragraph entry
      */
-    private validateParagraphEntry(entry: string, index: number): ParagraphValidationResult {
+    private validateParagraphEntry(
+        entry: string,
+        _index: number,
+    ): ParagraphValidationResult {
         const errors: string[] = [];
         const warnings: string[] = [];
 
         // Extract paragraph number
         const paragraphNumber = this.getParagraphNumber(entry);
-        
+
         // Check for common paragraph issues
         if (entry.length > 1000) {
             warnings.push('Paragraph entry is very long (may be full content)');
@@ -269,15 +278,15 @@ export class StructureValidator {
      */
     private getTOCLevel(entry: string): number {
         const trimmed = entry.trim();
-        
+
         // Count dots to determine level
         const dotCount = (trimmed.match(/\./g) || []).length;
-        
+
         if (/^Chapter\s+\d+/i.test(trimmed)) return 1;
         if (/^Section\s+\d+/i.test(trimmed)) return 2;
         if (/^Part\s+\d+/i.test(trimmed)) return 1;
         if (/^Book\s+\d+/i.test(trimmed)) return 1;
-        
+
         return Math.min(dotCount + 1, 5); // Cap at level 5
     }
 
@@ -286,7 +295,7 @@ export class StructureValidator {
      */
     private getParagraphNumber(entry: string): number {
         const trimmed = entry.trim();
-        
+
         // Extract number from various paragraph formats
         const patterns = [
             /^§(\d+)/, // "§1" -> 1
@@ -308,7 +317,9 @@ export class StructureValidator {
     /**
      * Validate structure consistency
      */
-    private validateStructureConsistency(structure: BookManifestInfo['bookStructure']): {
+    private validateStructureConsistency(
+        structure: BookManifestInfo['bookStructure'],
+    ): {
         errors: string[];
         warnings: string[];
         suggestions: string[];
@@ -336,24 +347,39 @@ export class StructureValidator {
         for (let i = 1; i < tocEntries.length; i++) {
             const prevLevel = this.getTOCLevel(tocEntries[i - 1].entry);
             const currLevel = this.getTOCLevel(tocEntries[i].entry);
-            
+
             if (currLevel > prevLevel + 1) {
-                warnings.push(`TOC hierarchy jump at index ${tocEntries[i].index}: level ${prevLevel} to ${currLevel}`);
+                warnings.push(
+                    `TOC hierarchy jump at index ${tocEntries[i].index}: level ${prevLevel} to ${currLevel}`,
+                );
             }
         }
 
         // Check paragraph numbering consistency
         const paragraphEntries = structure
-            .map((entry, index) => ({ entry, index, number: this.getParagraphNumber(entry) }))
+            .map((entry, index) => ({
+                entry,
+                index,
+                number: this.getParagraphNumber(entry),
+            }))
             .filter(({ entry }) => this.isParagraphEntry(entry));
 
-        const paragraphNumbers = paragraphEntries.map(p => p.number).filter(n => n > 0);
+        const paragraphNumbers = paragraphEntries
+            .map((p) => p.number)
+            .filter((n) => n > 0);
         if (paragraphNumbers.length > 0) {
-            const expectedNumbers = Array.from({ length: Math.max(...paragraphNumbers) }, (_, i) => i + 1);
-            const missingNumbers = expectedNumbers.filter(n => !paragraphNumbers.includes(n));
-            
+            const expectedNumbers = Array.from(
+                { length: Math.max(...paragraphNumbers) },
+                (_, i) => i + 1,
+            );
+            const missingNumbers = expectedNumbers.filter(
+                (n) => !paragraphNumbers.includes(n),
+            );
+
             if (missingNumbers.length > 0) {
-                warnings.push(`Missing paragraph numbers: ${missingNumbers.join(', ')}`);
+                warnings.push(
+                    `Missing paragraph numbers: ${missingNumbers.join(', ')}`,
+                );
             }
         }
 
@@ -372,8 +398,10 @@ export class StructureValidator {
         const warnings: string[] = [];
         const suggestions: string[] = [];
 
-        const tocCount = structure.filter(entry => this.isTOCEntry(entry)).length;
-        const paragraphCount = structure.filter(entry => this.isParagraphEntry(entry)).length;
+        const tocCount = structure.filter((entry) => this.isTOCEntry(entry)).length;
+        const paragraphCount = structure.filter((entry) =>
+            this.isParagraphEntry(entry),
+        ).length;
 
         // Check for minimum structure requirements
         if (tocCount === 0) {
@@ -426,7 +454,7 @@ export class StructureValidator {
 
         if (entry.length > 100) {
             errors.push('TOC entry is too long');
-            suggestedFormat = entry.substring(0, 100) + '...';
+            suggestedFormat = `${entry.substring(0, 100)}...`;
         }
 
         return {
@@ -458,7 +486,7 @@ export class StructureValidator {
 
         if (entry.length > 500) {
             errors.push('Paragraph entry is too long');
-            suggestedFormat = entry.substring(0, 500) + '...';
+            suggestedFormat = `${entry.substring(0, 500)}...`;
         }
 
         return {
@@ -468,4 +496,4 @@ export class StructureValidator {
             suggestedFormat,
         };
     }
-} 
+}

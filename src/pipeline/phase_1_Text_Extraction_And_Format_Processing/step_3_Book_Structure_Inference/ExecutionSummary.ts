@@ -1,6 +1,6 @@
 import { LOG_COMPONENTS } from '@/constants';
-import type { LoggerService } from '@/services/LoggerService';
 import type { StructureInferenceResult } from '@/services/BookStructureService/BookStructureService';
+import type { LoggerService } from '@/services/LoggerService';
 
 /**
  * Metrics for book structure inference
@@ -69,7 +69,10 @@ export class ExecutionSummary {
      */
     public startExecution(): void {
         this.startTime = Date.now();
-        this.logger.info(LOG_COMPONENTS.CONFIG_SERVICE, 'Starting book structure inference execution');
+        this.logger.info(
+            LOG_COMPONENTS.CONFIG_SERVICE,
+            'Starting book structure inference execution',
+        );
     }
 
     /**
@@ -78,9 +81,13 @@ export class ExecutionSummary {
     public endExecution(): void {
         this.endTime = Date.now();
         this.metrics.processingTime = this.endTime - this.startTime;
-        this.logger.info(LOG_COMPONENTS.CONFIG_SERVICE, 'Completed book structure inference execution', {
-            processingTime: this.metrics.processingTime,
-        });
+        this.logger.info(
+            LOG_COMPONENTS.CONFIG_SERVICE,
+            'Completed book structure inference execution',
+            {
+                processingTime: this.metrics.processingTime,
+            },
+        );
     }
 
     /**
@@ -95,13 +102,17 @@ export class ExecutionSummary {
         this.metrics.validationErrors = result.errors.length;
         this.metrics.validationWarnings = 0; // Would be updated if warnings were tracked
 
-        this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'Updated metrics from inference result', {
-            totalEntries: this.metrics.totalEntries,
-            matchedEntries: this.metrics.matchedEntries,
-            newEntries: this.metrics.newEntries,
-            correctedEntries: this.metrics.correctedEntries,
-            confidence: this.metrics.averageConfidence,
-        });
+        this.logger.debug(
+            LOG_COMPONENTS.CONFIG_SERVICE,
+            'Updated metrics from inference result',
+            {
+                totalEntries: this.metrics.totalEntries,
+                matchedEntries: this.metrics.matchedEntries,
+                newEntries: this.metrics.newEntries,
+                correctedEntries: this.metrics.correctedEntries,
+                confidence: this.metrics.averageConfidence,
+            },
+        );
     }
 
     /**
@@ -135,7 +146,8 @@ export class ExecutionSummary {
     ): void {
         this.progress.currentChunk = currentChunk;
         this.progress.totalChunks = totalChunks;
-        this.progress.percentage = totalChunks > 0 ? (currentChunk / totalChunks) * 100 : 0;
+        this.progress.percentage =
+            totalChunks > 0 ? (currentChunk / totalChunks) * 100 : 0;
         this.progress.currentOperation = currentOperation;
 
         // Calculate estimated time remaining
@@ -143,7 +155,8 @@ export class ExecutionSummary {
             const elapsedTime = Date.now() - this.startTime;
             const averageTimePerChunk = elapsedTime / currentChunk;
             const remainingChunks = totalChunks - currentChunk;
-            this.progress.estimatedTimeRemaining = averageTimePerChunk * remainingChunks;
+            this.progress.estimatedTimeRemaining =
+                averageTimePerChunk * remainingChunks;
         }
 
         this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'Updated progress', {
@@ -211,11 +224,15 @@ export class ExecutionSummary {
      */
     public logSummary(): void {
         const report = this.generateReport();
-        this.logger.info(LOG_COMPONENTS.CONFIG_SERVICE, 'Book structure inference execution summary', {
-            report,
-            metrics: this.metrics,
-            progress: this.progress,
-        });
+        this.logger.info(
+            LOG_COMPONENTS.CONFIG_SERVICE,
+            'Book structure inference execution summary',
+            {
+                report,
+                metrics: this.metrics,
+                progress: this.progress,
+            },
+        );
     }
 
     /**
@@ -294,8 +311,9 @@ export class ExecutionSummary {
         return {
             isComplete: this.isComplete(),
             isSuccessful: this.isSuccessful(),
-            hasErrors: this.metrics.validationErrors > 0 || this.metrics.failedChunks > 0,
+            hasErrors:
+                this.metrics.validationErrors > 0 || this.metrics.failedChunks > 0,
             hasWarnings: this.metrics.validationWarnings > 0,
         };
     }
-} 
+}

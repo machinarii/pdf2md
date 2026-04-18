@@ -1,8 +1,4 @@
 // Export all book structure related services
-export { BookStructureService } from './BookStructureService';
-export { BookTypesService } from './BookTypesService';
-export { StructureAnalyzer } from './StructureAnalyzer';
-export { StructureInferrer } from './StructureInferrer';
 
 // Export types
 export type {
@@ -10,9 +6,14 @@ export type {
     StructureInferenceOptions,
     StructureInferenceResult,
 } from './BookStructureService';
-
-export type { BookTypeConfig, HeaderTypeConfig, BookTypesConfig } from './BookTypesService';
-
+export { BookStructureService } from './BookStructureService';
+export type {
+    BookTypeConfig,
+    BookTypesConfig,
+    HeaderTypeConfig,
+} from './BookTypesService';
+export { BookTypesService } from './BookTypesService';
+export { StructureAnalyzer } from './StructureAnalyzer';
 export type {
     InferenceOptions,
     MatchedEntry,
@@ -20,3 +21,4 @@ export type {
     StructureCorrection,
     StructureInferenceResponse,
 } from './StructureInferrer';
+export { StructureInferrer } from './StructureInferrer';

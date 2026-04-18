@@ -1,8 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { ERROR_CODES, ERROR_MESSAGES, LOG_COMPONENTS, TEXT_SOURCE_PRIORITY } from '@/constants';
+import { LOG_COMPONENTS, TEXT_SOURCE_PRIORITY } from '@/constants';
 import type { FilenameMetadata } from '@/types';
-import { AppError } from '@/utils/AppError';
 import type { LoggerService } from './LoggerService';
 
 /**
@@ -87,10 +86,13 @@ export class TextSourceManager {
         }
 
         // No text source available - return null instead of throwing error
-        logger.info('No text source available for structure inference - step will be omitted', {
-            author: metadata.author,
-            title: metadata.title,
-        });
+        logger.info(
+            'No text source available for structure inference - step will be omitted',
+            {
+                author: metadata.author,
+                title: metadata.title,
+            },
+        );
         return null;
     }
 
@@ -104,7 +106,12 @@ export class TextSourceManager {
         try {
             // Look for OCR file in the book-specific directory
             const configKey = this.generateConfigKey(metadata);
-            const ocrFilePath = path.join(bookArtifactsDir, configKey, 'phase1', 'step2.ocr');
+            const ocrFilePath = path.join(
+                bookArtifactsDir,
+                configKey,
+                'phase1',
+                'step2.ocr',
+            );
 
             // Check if OCR file exists
             await fs.access(ocrFilePath);
@@ -142,10 +149,14 @@ export class TextSourceManager {
             };
         } catch (error) {
             // File not found or not readable - return null instead of throwing error
-            this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'CLI text file not available', {
-                filePath,
-                error: error instanceof Error ? error.message : String(error),
-            });
+            this.logger.debug(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+                'CLI text file not available',
+                {
+                    filePath,
+                    error: error instanceof Error ? error.message : String(error),
+                },
+            );
             return null;
         }
     }
@@ -167,10 +178,14 @@ export class TextSourceManager {
             };
         } catch (error) {
             // File not found or not readable - return null instead of throwing error
-            this.logger.debug(LOG_COMPONENTS.CONFIG_SERVICE, 'Step 2 text file not available', {
-                filePath,
-                error: error instanceof Error ? error.message : String(error),
-            });
+            this.logger.debug(
+                LOG_COMPONENTS.CONFIG_SERVICE,
+                'Step 2 text file not available',
+                {
+                    filePath,
+                    error: error instanceof Error ? error.message : String(error),
+                },
+            );
             return null;
         }
     }

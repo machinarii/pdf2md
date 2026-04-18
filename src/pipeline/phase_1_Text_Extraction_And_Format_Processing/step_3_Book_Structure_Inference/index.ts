@@ -1,8 +1,15 @@
 // Export main components for book structure inference step
 export { BookStructureAnalyzer } from './BookStructureAnalyzer';
-export { StructureValidator } from './StructureValidator';
+export type {
+    StructureInferenceMetrics,
+    StructureInferenceProgress,
+} from './ExecutionSummary';
 export { ExecutionSummary } from './ExecutionSummary';
 
 // Export types for external use
-export type { StructureValidationResult, TOCValidationResult, ParagraphValidationResult } from './StructureValidator';
-export type { StructureInferenceMetrics, StructureInferenceProgress } from './ExecutionSummary'; 
+export type {
+    ParagraphValidationResult,
+    StructureValidationResult,
+    TOCValidationResult,
+} from './StructureValidator';
+export { StructureValidator } from './StructureValidator';

@@ -1,5 +1,4 @@
 import { LOG_COMPONENTS } from '@/constants';
-import type { LoggerService } from '@/services/LoggerService';
 import type { PipelineState, ProgressCallback } from '@/types';
 import { AbstractPhase } from './AbstractPhase';
 
@@ -26,7 +25,9 @@ export class AIEnhancementsPhase extends AbstractPhase {
         state: PipelineState,
         progressCallback?: ProgressCallback,
     ): Promise<unknown> {
-        const pipelineLogger = this.logger.getPipelineLogger(LOG_COMPONENTS.PIPELINE_MANAGER);
+        const pipelineLogger = this.logger.getPipelineLogger(
+            LOG_COMPONENTS.PIPELINE_MANAGER,
+        );
 
         pipelineLogger.info(
             {

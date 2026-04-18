@@ -4,6 +4,8 @@
 
 Step 1.2 extracts author content from files based on configured boundaries in the book structure YAML files. It supports different file types and automatically prompts users for missing boundary values.
 
+Its output (`book-artifacts/<book>/phase1/step2.txt` and, for OCR, `step2.ocr`) is consumed by `TextCleanerService` (deterministic pre-LLM cleanup) and then by `step_3_Book_Structure_Inference/` (LLM-based structure correction via Ollama).
+
 ## Features
 
 - **Boundary-based extraction**: Extracts text based on page numbers or text markers
