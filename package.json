@@ -7,7 +7,7 @@
     "clean-book": "dist/src/index.js"
   },
   "scripts": {
-    "build": "swc src -d dist --config-file .swcrc",
+    "build": "swc src -d dist --config-file .swcrc && chmod +x dist/src/index.js",
     "build:watch": "swc src -d dist --config-file .swcrc --watch",
     "dev": "node -r @swc-node/register src/index.ts",
     "dev:watch": "node -r @swc-node/register --watch src/index.ts",
