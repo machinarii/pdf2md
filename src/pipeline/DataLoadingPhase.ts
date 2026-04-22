@@ -15,22 +15,24 @@ import { FileUtils } from '../utils/FileUtils';
 import { AbstractPhase } from './AbstractPhase';
 import { FileFormatDetector } from './phase_1_Text_Extraction_And_Format_Processing/step_1_File_Format_Detection_And_Validation/FileFormatDetector';
 import { TextExtractor } from './phase_1_Text_Extraction_And_Format_Processing/step_2_Text_Extraction/TextExtractor';
-import { BookStructureAnalyzer } from './phase_1_Text_Extraction_And_Format_Processing/step_3_Book_Structure_Inference/BookStructureAnalyzer';
 
 /**
- * Phase 1: Data Loading & Format Detection
+ * Phase 1: extract text, then run deterministic cleanup.
  *
- * This phase handles:
- * - Step 1: File format detection and validation
- * - Step 2: Text extraction based on book structure
- * - Step 3: Book structure inference and correction
+ *   1. File-format detection
+ *   2. Text extraction (embedded + Tesseract OCR when needed)
+ *   3. TextCleanerService — Unicode normalization, ligatures, page-number
+ *      removal, hyphen rejoining, repeated header/footer dedup, paragraph
+ *      rewrap, OCR-specific passes
+ *
+ * The cleaned text is written to `book-artifacts/<book>/phase1/step2-cleaned.*`
+ * and picked up by `CleanBookCommand.finalizeOutput` to be written as
+ * `<basename>.md` next to the source file.
  */
 export class DataLoadingPhase extends AbstractPhase {
     private formatDetector: FileFormatDetector;
     private textExtractor: TextExtractor;
-    private bookStructureAnalyzer: BookStructureAnalyzer;
     private fileUtils: FileUtils;
-    private bookStructureService: BookStructureService;
     private textCleaner: TextCleanerService;
 
     constructor(
@@ -46,9 +48,7 @@ export class DataLoadingPhase extends AbstractPhase {
             getArtifactsDir(),
             bookStructureService,
         );
-        this.bookStructureAnalyzer = new BookStructureAnalyzer(logger);
         this.fileUtils = new FileUtils(logger);
-        this.bookStructureService = bookStructureService;
         this.textCleaner = new TextCleanerService(logger);
     }
 
@@ -57,7 +57,7 @@ export class DataLoadingPhase extends AbstractPhase {
     }
 
     public override getDescription(): string {
-        return 'Detects file format, validates structure, extracts text, and infers book structure corrections';
+        return 'Detects file format, extracts text, and runs deterministic cleanup';
     }
 
     public override async execute(
@@ -70,26 +70,19 @@ export class DataLoadingPhase extends AbstractPhase {
 
         try {
             pipelineLogger.info(
-                {
-                    pipelineId: state.id,
-                    inputFile: state.inputFile,
-                },
+                { pipelineId: state.id, inputFile: state.inputFile },
                 'Starting data loading phase',
             );
 
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-1-format-detection',
-                    current: 0,
-                    total: 100,
-                    percentage: 0,
-                    message: 'Step 1: Detecting file format...',
-                });
-            }
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-1-format-detection',
+                current: 0,
+                total: 100,
+                percentage: 0,
+                message: 'Step 1: Detecting file format...',
+            });
 
-            // Create FileInfo object from input file path
             const fs = await import('node:fs/promises');
             const path = await import('node:path');
             const stats = await fs.stat(state.inputFile);
@@ -102,106 +95,71 @@ export class DataLoadingPhase extends AbstractPhase {
                     .extname(state.inputFile)
                     .toLowerCase()
                     .slice(1) as FileInfo['format'],
-                mimeType: 'application/octet-stream', // Will be detected properly
+                mimeType: 'application/octet-stream',
                 lastModified: stats.mtime,
             };
 
-            // Use the existing FileFormatDetector
             const formatResult = await this.formatDetector.detectFormat(fileInfo);
 
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-1-format-detection',
-                    current: 50,
-                    total: 100,
-                    percentage: 50,
-                    message: 'Step 1: File format detected successfully',
-                });
-            }
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-1-format-detection',
+                current: 40,
+                total: 100,
+                percentage: 40,
+                message: 'Step 1: File format detected',
+            });
 
-            // Step 2: Text Extraction Based on Book Structure
             pipelineLogger.info(
-                {
-                    pipelineId: state.id,
-                    format: formatResult.format,
-                },
-                'Starting Step 2: Text extraction based on book structure',
+                { pipelineId: state.id, format: formatResult.format },
+                'Starting Step 2: Text extraction',
             );
 
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-2-text-extraction',
-                    current: 60,
-                    total: 100,
-                    percentage: 60,
-                    message: 'Step 2: Extracting text based on book structure...',
-                });
-            }
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-2-text-extraction',
+                current: 50,
+                total: 100,
+                percentage: 50,
+                message: 'Step 2: Extracting text...',
+            });
 
-            // Parse filename metadata
             const metadata = this.fileUtils.parseFilename(state.inputFile);
-
-            // Determine file type
             const fileType = this.determineFileType(formatResult);
 
-            // Extract text using TextExtractor
             const textExtractionResult = await this.textExtractor.extractText(
                 fileInfo,
                 {
                     hasTextBoundaries: true,
-                    boundaries: {}, // Will be populated by TextExtractor from book structure
+                    boundaries: {},
                     fileType,
                     skipStartMarker: state.skipStartMarker,
-                    // No outputDir - TextExtractor always uses book-artifacts directory for intermediate results
                 },
                 metadata,
                 state.bookType,
             );
 
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-2-text-extraction',
-                    current: 80,
-                    total: 100,
-                    percentage: 80,
-                    message: 'Step 2: Text extraction completed successfully',
-                });
-            }
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-2-text-extraction',
+                current: 75,
+                total: 100,
+                percentage: 75,
+                message: 'Step 2: Text extraction complete',
+            });
 
-            // Step 3: Text Quality Enhancement
-            pipelineLogger.info(
-                {
-                    pipelineId: state.id,
-                },
-                'Starting Step 3: Text Quality Enhancement',
-            );
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-3-text-cleanup',
+                current: 80,
+                total: 100,
+                percentage: 80,
+                message: 'Step 3: Deterministic text cleanup...',
+            });
 
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-3-text-quality-enhancement',
-                    current: 85,
-                    total: 100,
-                    percentage: 85,
-                    message: 'Step 3: Enhancing text quality...',
-                });
-            }
-
-            // Get manifest path for text enhancement
-            const _manifestPath = this.bookStructureService.getManifestPath(metadata);
-
-            // Read the extracted text files
             const configKey = this.getConfigKey(metadata);
             const bookArtifactsDir = getArtifactsDir();
-            const bookDir = `${bookArtifactsDir}/${configKey}`;
-            const phase1Dir = `${bookDir}/phase1`;
+            const phase1Dir = `${bookArtifactsDir}/${configKey}/phase1`;
             const step2TxtPath = `${phase1Dir}/step2.txt`;
             const step2OcrPath = `${phase1Dir}/step2.ocr`;
 
@@ -210,146 +168,60 @@ export class DataLoadingPhase extends AbstractPhase {
 
             try {
                 txtContent = await fs.readFile(step2TxtPath, 'utf-8');
-            } catch (_error) {
-                pipelineLogger.warn(
+            } catch {
+                pipelineLogger.debug(
                     { pipelineId: state.id, path: step2TxtPath },
-                    'Could not read step2.txt file',
+                    'No step2.txt file found',
                 );
             }
-
             try {
                 ocrContent = await fs.readFile(step2OcrPath, 'utf-8');
-            } catch (_error) {
+            } catch {
                 pipelineLogger.debug(
                     { pipelineId: state.id, path: step2OcrPath },
-                    'No step2.ocr file found (this is normal for non-OCR texts)',
+                    'No step2.ocr file found (normal for non-OCR texts)',
                 );
             }
 
-            // Deterministic cleanup before structure inference — fewer tokens,
-            // cleaner input. Source mode follows whichever text we end up using.
             if (txtContent) {
-                const { cleanedText, stats } = this.textCleaner.clean(txtContent, {
-                    source: 'pdf',
-                });
-                txtContent = cleanedText;
+                const { cleanedText, stats: cleanStats } = this.textCleaner.clean(
+                    txtContent,
+                    { source: 'pdf' },
+                );
                 await fs.writeFile(
                     `${phase1Dir}/step2-cleaned.txt`,
                     cleanedText,
                     'utf-8',
                 );
                 pipelineLogger.info(
-                    { pipelineId: state.id, stats },
+                    { pipelineId: state.id, stats: cleanStats },
                     'Deterministic cleanup of extracted text complete',
                 );
             }
             if (ocrContent) {
-                const { cleanedText, stats } = this.textCleaner.clean(ocrContent, {
-                    source: 'ocr',
-                });
-                ocrContent = cleanedText;
+                const { cleanedText, stats: cleanStats } = this.textCleaner.clean(
+                    ocrContent,
+                    { source: 'ocr' },
+                );
                 await fs.writeFile(
                     `${phase1Dir}/step2-cleaned.ocr`,
                     cleanedText,
                     'utf-8',
                 );
                 pipelineLogger.info(
-                    { pipelineId: state.id, stats },
+                    { pipelineId: state.id, stats: cleanStats },
                     'Deterministic cleanup of OCR text complete',
                 );
             }
 
-            // Process text with Book Structure Inference
-            let structureInferenceResult:
-                | import('@/services/BookStructureService/BookStructureService').StructureInferenceResult
-                | null = null;
-
-            // Determine text source for structure inference
-            let inferenceTextSource: string | null = null;
-            if (ocrContent) {
-                inferenceTextSource = ocrContent;
-                pipelineLogger.info(
-                    { pipelineId: state.id },
-                    'Using OCR content for structure inference',
-                );
-            } else if (txtContent) {
-                inferenceTextSource = txtContent;
-                pipelineLogger.info(
-                    { pipelineId: state.id },
-                    'Using extracted text for structure inference',
-                );
-            }
-
-            if (inferenceTextSource) {
-                // Perform book structure inference
-                structureInferenceResult =
-                    await this.bookStructureAnalyzer.inferBookStructure(
-                        metadata,
-                        inferenceTextSource,
-                        {
-                            chunkSize: 5000,
-                            overlapPercentage: 20,
-                            maxRetries: 3,
-                            confidenceThreshold: 0.7,
-                            enableNewEntries: true,
-                            enableCorrections: true,
-                        },
-                    );
-
-                pipelineLogger.info(
-                    {
-                        pipelineId: state.id,
-                        originalEntries:
-                            structureInferenceResult.originalStructure.length,
-                        correctedEntries:
-                            structureInferenceResult.correctedStructure.length,
-                        newEntries: structureInferenceResult.newEntries.length,
-                        corrections: structureInferenceResult.corrections.length,
-                        confidence: structureInferenceResult.confidence,
-                        processingTime: structureInferenceResult.processingTime,
-                    },
-                    'Book structure inference completed successfully',
-                );
-            } else {
-                pipelineLogger.warn(
-                    { pipelineId: state.id },
-                    'No text source available for structure inference',
-                );
-            }
-
-            // Update progress
-            if (progressCallback) {
-                progressCallback({
-                    phase: this.getName(),
-                    step: 'step-3-book-structure-inference',
-                    current: 100,
-                    total: 100,
-                    percentage: 100,
-                    message: 'Step 3: Book structure inference completed successfully',
-                });
-            }
-
-            pipelineLogger.info(
-                {
-                    pipelineId: state.id,
-                    structureInferred: !!structureInferenceResult,
-                    success: structureInferenceResult?.success || false,
-                },
-                'Step 3: Book Structure Inference completed successfully',
-            );
-
-            // Store processing results in pipeline state
-            const result = {
-                phase: 'data_loading',
-                success: true,
-                data: {
-                    formatResult,
-                    textExtractionResult,
-                    structureInferenceResult: structureInferenceResult || null,
-                    metadata,
-                },
-                timestamp: new Date(),
-            };
+            progressCallback?.({
+                phase: this.getName(),
+                step: 'step-3-text-cleanup',
+                current: 100,
+                total: 100,
+                percentage: 100,
+                message: 'Step 3: Cleanup complete',
+            });
 
             pipelineLogger.info(
                 {
@@ -362,7 +234,12 @@ export class DataLoadingPhase extends AbstractPhase {
                 'Data loading phase completed successfully',
             );
 
-            return result;
+            return {
+                phase: 'data_loading',
+                success: true,
+                data: { formatResult, textExtractionResult, metadata },
+                timestamp: new Date(),
+            };
         } catch (error) {
             pipelineLogger.error(
                 {
@@ -383,32 +260,21 @@ export class DataLoadingPhase extends AbstractPhase {
         }
     }
 
-    /**
-     * Determine file type based on format detection result
-     */
     private determineFileType(formatResult: FileFormatResult): string {
         if (formatResult.format === 'pdf') {
-            // Use content type from format detection
             switch (formatResult.metadata?.contentType) {
                 case 'text_based':
                     return 'pdf-text';
                 case 'image_based':
                     return 'pdf-ocr';
-                case 'hybrid':
-                    return 'pdf-text-ocr';
                 default:
-                    return 'pdf-text-ocr'; // Default to hybrid
+                    return 'pdf-text-ocr';
             }
         }
-        if (formatResult.format === 'epub') {
-            return 'epub';
-        }
+        if (formatResult.format === 'epub') return 'epub';
         return 'text';
     }
 
-    /**
-     * Generate configuration key for book-specific directory
-     */
     private getConfigKey(metadata: {
         author: string;
         title: string;

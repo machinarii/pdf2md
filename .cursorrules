@@ -34,7 +34,7 @@ This is a TypeScript/Node.js CLI application for cleaning and processing book fi
 -   **Testing**: Jest with @swc/jest
 -   **CLI Framework**: Commander.js
 -   **Logging**: Pino (structured logging)
--   **AI Integration**: Ollama (local, OpenAI-compatible `/v1` API)
+-   **Text cleanup**: `TextCleanerService` — deterministic, regex-based (no LLM)
 
 ## Architecture Guidelines
 
@@ -152,8 +152,6 @@ import { LoggerService } from '@/services/LoggerService';
 -   Use the custom `AppError` class for application-specific errors
 -   Always include context and cause chaining in errors
 -   **FORBIDDEN**: Never resolve TypeScript errors with `any` keyword - use proper typing instead
--   **Ollama Integration**: Graceful degradation on failures (1 retry on `ECONNREFUSED`,
-    1 retry on invalid JSON, then continue with an empty inference result)
 
 ### 5. TypeScript Best Practices
 
@@ -310,18 +308,15 @@ logger.info('Starting text extraction', {
 -   Pre-commit: Run linting and type checking
 -   Pre-push: Run full test suite
 
-## AI Integration Guidelines
+## Text Processing Guidelines
 
-### Ollama API
+### Deterministic cleanup (`TextCleanerService`)
 
--   Use structured prompts for text cleaning; pass `response_format: { type: 'json_object' }`
-    when the caller expects JSON
--   Always include `options: { num_ctx }` so the local model loads with enough context
--   Log all API interactions for debugging
--   Graceful degradation on failures — do not exit the process (1 retry on
-    `ECONNREFUSED`, 1 retry on invalid JSON, then continue with an empty result)
+-   All text cleanup is regex-based; no LLM calls.
+-   Pass order in `src/services/TextCleanerService.ts` is load-bearing — do not reorder.
+-   Add new boilerplate patterns to `BOILERPLATE_PATTERNS` or `book-types.yaml`.
 
-### Text Processing
+### Extraction
 
 -   Preserve original text structure when possible
 -   Handle different text encodings correctly

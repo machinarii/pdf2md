@@ -10,7 +10,7 @@ packageJson = { version: '0.1.0' };
 export const APP_NAME = 'Book Cleaner CLI';
 export const APP_VERSION = packageJson.version;
 export const APP_DESCRIPTION =
-    'Transform raw book sources (PDF/EPUB/TXT) into clean, readable Markdown. Runs deterministic text cleanup before calling a local Ollama model for structure inference.';
+    'Turn PDF / EPUB / TXT into clean Markdown with a deterministic, fully-local text-cleanup pass.';
 
 // ==================== File and Format Constants ====================
 
@@ -242,21 +242,6 @@ export const FOOTNOTE_FORMATS = {
     MARKDOWN: '[^%d]', // [^1] format for markdown footnotes
 } as const;
 
-// ==================== AI Provider Constants ====================
-
-export const OLLAMA_DEFAULTS = {
-    BASE_URL: 'http://localhost:11434/v1',
-    MODEL: 'qwen3:32b',
-    NUM_CTX: 32768,
-} as const;
-
-export const DEFAULT_AI_CONFIG = {
-    TEMPERATURE: 0.1,
-    MAX_TOKENS: 4000,
-    RETRIES: 3,
-    TIMEOUT: 30000,
-} as const;
-
 // ==================== Output Format Constants ====================
 
 export const OUTPUT_FORMATS = {
@@ -322,10 +307,6 @@ export const CLI_OPTIONS = {
     LOG_LEVEL: 'log-level',
     CONFIG: 'config',
     SKIP_START_MARKER: 'skip-start-marker',
-    INFER_TEXT: 'infer-text',
-    ERROR_LOG_FILE: 'error-log-file',
-    ERROR_OUTPUT_FORMAT: 'error-output-format',
-    LOG_ERRORS_TO_STDERR: 'log-errors-to-stderr',
 } as const;
 
 export const CLI_ALIASES = {
@@ -335,34 +316,6 @@ export const CLI_ALIASES = {
     [CLI_OPTIONS.LOG_LEVEL]: 'l',
     [CLI_OPTIONS.CONFIG]: 'c',
     [CLI_OPTIONS.SKIP_START_MARKER]: 's',
-    [CLI_OPTIONS.INFER_TEXT]: 'i',
-    [CLI_OPTIONS.ERROR_LOG_FILE]: 'e',
-    [CLI_OPTIONS.ERROR_OUTPUT_FORMAT]: 'f',
-    [CLI_OPTIONS.LOG_ERRORS_TO_STDERR]: 'E',
-} as const;
-
-// Error output formats
-export const ERROR_OUTPUT_FORMATS = {
-    JSON: 'json',
-    TEXT: 'text',
-    COMPACT: 'compact',
-} as const;
-
-export const VALID_ERROR_OUTPUT_FORMATS = Object.values(
-    ERROR_OUTPUT_FORMATS,
-) as readonly string[];
-
-// ==================== File System Constants ====================
-
-export const TEMP_DIR_PREFIX = 'book-cleaner-';
-export const BACKUP_DIR_NAME = 'backup';
-export const LOG_DIR_NAME = 'logs';
-export const CACHE_DIR_NAME = 'cache';
-
-export const FILE_PERMISSIONS = {
-    READ: 0o444,
-    WRITE: 0o644,
-    EXECUTE: 0o755,
 } as const;
 
 // ==================== Performance Constants ====================
@@ -402,27 +355,11 @@ export const TEXT_SOURCE_PRIORITY = {
 // ==================== Environment Variables ====================
 
 export const ENV_VARS = {
-    OLLAMA_BASE_URL: 'OLLAMA_BASE_URL',
-    OLLAMA_MODEL: 'OLLAMA_MODEL',
-    OLLAMA_NUM_CTX: 'OLLAMA_NUM_CTX',
     LOG_LEVEL: 'LOG_LEVEL',
     DEBUG: 'DEBUG',
     NODE_ENV: 'NODE_ENV',
     CONFIG_DIR: 'CONFIG_DIR',
     OUTPUT_DIR: 'OUTPUT_DIR',
-    TEMP_DIR: 'TEMP_DIR',
-} as const;
-
-// ==================== Regex Patterns ====================
-
-export const REGEX_PATTERNS = {
-    FILENAME_METADATA: /^([^#]+)#([^#]+)(?:#([^#]+))?\.(.+)$/,
-    CHAPTER_HEADING: /^(?:Kapitel|Chapter|Teil|Part)\s+(\d+)(?:\.(\d+))?/i,
-    FOOTNOTE_REFERENCE: /\[(\d+)\]|\((\d+)\)|(\d+)\)/g,
-    PARAGRAPH_BREAK: /\n\s*\n/g,
-    MULTIPLE_SPACES: /\s{2,}/g,
-    LEADING_TRAILING_SPACES: /^\s+|\s+$/g,
-    UNICODE_WHITESPACE: /[\u00A0\u2000-\u200A\u2028\u2029]/g,
 } as const;
 
 // ==================== Message Templates ====================

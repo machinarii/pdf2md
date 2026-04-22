@@ -17,13 +17,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
-    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
-    "analyze-structure": "node -r @swc-node/register scripts/analyze-book-structure.ts",
-    "test-format-detection": "node -r @swc-node/register scripts/test-format-detection.ts",
-    "test:step1-2": "node -r @swc-node/register scripts/test-step1-2.ts",
-    "test:pipeline-results": "node -r @swc-node/register scripts/test-pipeline-results.ts",
-    "fix-ts": "node scripts/fix-ts-resolution.js",
+    "format": "biome format . --write",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
   },
@@ -70,7 +64,6 @@
     "@types/node": "^24.0.0",
     "@types/pdf-parse": "^1.1.5",
     "jest": "^30.3.0",
-    "prettier": "^3.8.3",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.0"
   },

@@ -1,233 +1,99 @@
 # Book Cleaner CLI
 
-A sophisticated Node.js/TypeScript CLI tool for automated book processing with AI-powered text cleanup. The system processes PDF/EPUB/TXT files through a multi-phase pipeline to generate embedding-ready text.
+Node.js/TypeScript CLI that turns PDF / EPUB / TXT into a clean Markdown file with a single deterministic cleanup pass. No LLM required.
 
-## Features
+## What it does
 
--   🔄 **Multi-Phase Pipeline**: 4 main phases with comprehensive text processing
--   🤖 **Local LLM**: Ollama integration (OpenAI-compatible `/v1` API)
--   🧹 **Deterministic Pre-LLM Cleanup**: Ligature/quote normalization, hyphen rejoining,
-        header/footer dedup, OCR artifact fixes — runs before any LLM call to save tokens
--   📊 **Multiple Format Support**: PDF, EPUB, and TXT input formats
--   🔧 **Configuration Management**: YAML-based config with environment variable support
--   📝 **Tagged Logging**: Pino-based logging with component-specific log levels
--   🎯 **OCR Processing**: Tesseract integration with text comparison
--   📋 **Progress Tracking**: Real-time progress reporting with Rich output formatting
+For each input file:
 
-## Installation
+1. Detects the file format (PDF / EPUB / TXT) and validates it.
+2. Extracts text — embedded PDF text, EPUB chapters, or runs Tesseract OCR for image PDFs.
+3. Runs `TextCleanerService` — deterministic cleanup ported from `txt-cleaner.py`: Unicode / ligature / smart-quote normalization, page-number and TOC-leader removal, repeated header/footer dedup, hyphen-break rejoining, paragraph rewrap, OCR artifact fixes.
+4. Writes the cleaned result next to the source file as `<basename>.md`.
+5. Deletes the intermediate `book-artifacts/<book>/` directory (keep with `--keep-artifacts`).
+
+The pipeline is fully local and offline. No API calls. No model required.
+
+## Install
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd book-cleaner-cli
-
-# Install dependencies
+git clone <repo>
+cd book-cleaner-cli-ollama
 npm install
-
-# Build the project
 npm run build
+npm link            # puts `clean-book` on your PATH
+```
 
-# Install globally (optional)
-npm install -g .
+If `npm link` hits permission errors on Homebrew Node, set a user-writable prefix first:
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix "$HOME/.npm-global"
+export PATH="$HOME/.npm-global/bin:$PATH"   # add to ~/.zshrc to persist
 ```
 
 ## Usage
 
-### Basic Usage
-
 ```bash
-# Process a book file
-clean-book "Rudolf_Steiner#Goethes_Naturwissenschaftliche_Schriften#GA_1.pdf"
-
-# Specify output directory
-clean-book -o ./output "Author#Title.pdf"
-
-# Enable verbose logging
-clean-book -v "Author#Title.epub"
-
-# Override author and title
-clean-book -a "Custom Author" -t "Custom Title" "original_file.txt"
+clean-book some-report.pdf                 # writes some-report.md next to source
+clean-book -s any.pdf                      # skip boundary prompt (process whole file)
+clean-book --keep-artifacts any.pdf        # preserve book-artifacts/<book>/
+clean-book -v -l debug any.pdf             # verbose + debug logs
 ```
 
-### Advanced Usage
+Run `clean-book --help` for the full option list.
 
-```bash
-# Run specific phases only
-clean-book -p "data_loading,text_normalization" "book.pdf"
+### Filename convention (optional)
 
-# Enable debug logging
-clean-book -d "book.pdf"
+If you name files `<author>#<title>[#<book-index>].<ext>`, the CLI fills the metadata automatically; otherwise it falls back to `author=Unknown`, `title=<basename>`.
 
-# Set custom log level
-clean-book -l debug "book.pdf"
-```
+### Text boundaries
 
-### Filename Convention
+On an interactive terminal, the CLI prompts for "text before first chapter" / "text after last chapter" so it can trim front/back matter before cleanup. Skip the prompt with `-s` to process the whole file. Non-interactive shells skip automatically.
 
-Input files should follow the pattern: `<author>#<title>[#<book-index>].<extension>`
+## Environment variables
 
-Examples:
+| Variable | Purpose |
+|----------|---------|
+| `LOG_LEVEL` | `debug` / `info` / `warn` / `error` / `fatal` |
+| `CONFIG_DIR` | Override the `book-artifacts/` location (absolute path) |
+| `OUTPUT_DIR` | Default output dir for the `-o` flag |
 
--   `Rudolf_Steiner#Goethes_Naturwissenschaftliche_Schriften#GA_1.pdf`
--   `Jane_Doe#Sample_Book.epub`
--   `John_Smith#Another_Title#Vol_2.txt`
-
-## Configuration
-
-Configuration files are automatically loaded from the `configs/` directory based on the filename pattern:
-
--   `configs/<author>#<title>.config` - Book-specific configuration
--   `configs/default.config` - Default configuration
-
-### Prerequisites
-
--   Node version matching `.nvmrc` (current LTS)
--   [Ollama](https://ollama.com) installed and running
--   Model pulled locally, e.g. `ollama pull qwen3:32b`
-
-### Environment Variables
-
--   `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default: `http://localhost:11434/v1`)
--   `OLLAMA_MODEL` - Model name (default: `qwen3:32b`)
--   `OLLAMA_NUM_CTX` - Context window in tokens (default: `32768`)
--   `LOG_LEVEL` - Global log level (debug, info, warn, error, fatal)
--   `OUTPUT_DIR` - Default output directory
--   `CONFIG_DIR` - Configuration directory path
-
-Example:
-
-```bash
-export OLLAMA_BASE_URL=http://localhost:11434/v1
-export OLLAMA_MODEL=qwen3:32b
-export OLLAMA_NUM_CTX=32768
-clean-book sample-book.txt
-```
-
-## Processing Phases
-
-### Phase 1: Data Loading & Preprocessing
-
--   Text extraction from various formats
--   PDF OCR processing with comparison
--   **Deterministic text cleanup** (`TextCleanerService`) runs on every chunk before
-    the LLM sees it: ligature / smart-quote normalization, hyphen-break rejoining,
-    repeated header/footer removal, page-number stripping, OCR artifact fixes
--   Metadata generation
--   Chapter recognition
--   Footnote extraction
-
-### Phase 2: Text Normalization & AI Cleaning
-
--   Heading normalization
--   Local LLM text cleanup via Ollama
--   Safe text replacements
--   Spell checking
-
-### Phase 3: Evaluation & Analysis
-
--   Change analysis
--   Quality assessment
--   Processing statistics
-
-### Phase 4: AI Enhancements (Future)
-
--   Person directory generation
--   Bibliography creation
--   Glossary generation
+No API keys, no model, no network.
 
 ## Development
 
-### Setup
-
 ```bash
-# Install dependencies
-npm install
-
-# Run in development mode
-npm run dev
-
-# Run tests
-npm test
-
-# Run tests with coverage
-npm run test:coverage
-
-# Lint code
-npm run lint
-
-# Format code
-npm run format
+npm run dev -- some.pdf       # swc-node, no build step
+npm run build                  # swc → dist/
+npm run lint                   # biome
+npm test                       # jest
+npm run typecheck              # tsc --noEmit
 ```
 
-### Project Structure
+### Project structure
 
 ```
-book-cleaner-cli/
-├── src/
-│   ├── cli/           # CLI commands
-│   ├── pipeline/      # Processing pipeline
-│   ├── services/      # Core services
-│   ├── utils/         # Utility functions
-│   ├── types/         # TypeScript types
-│   └── constants.ts   # Application constants
-├── tests/             # Test files
-├── configs/           # Configuration files
-└── docs/              # Documentation
+src/
+├── cli/               # Commander.js entrypoint
+├── pipeline/          # DataLoadingPhase + PipelineManager
+│   └── phase_1_Text_Extraction_And_Format_Processing/
+│       ├── step_1_File_Format_Detection_And_Validation/
+│       └── step_2_Text_Extraction/
+├── services/          # OCRService, TextCleanerService, ConfigService, …
+├── utils/             # ArtifactsDir, FileUtils, TextUtils, AppError, ChalkUtils
+├── types/             # Shared TypeScript types
+└── constants.ts
+tests/                 # Jest unit tests
+book-artifacts/        # Manifests + per-book intermediate output
+.github/workflows/     # CI
 ```
 
-### Testing
+Key service docs:
 
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
-
-# Run specific test file
-npm test -- FileUtils.test.ts
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
-
-## Architecture
-
-The application follows a modular architecture with:
-
--   **Pipeline Manager**: Orchestrates the processing pipeline
--   **Phase System**: Extensible phase-based processing
--   **Service Layer**: Core business logic services
--   **Utility Layer**: Common utility functions
--   **Configuration Management**: Flexible configuration system
--   **Tagged Logging**: Component-specific logging
+- [`src/services/TextCleanerService.md`](src/services/TextCleanerService.md) — the cleanup passes and their order
+- [`src/pipeline/phase_1_Text_Extraction_And_Format_Processing/README.md`](src/pipeline/phase_1_Text_Extraction_And_Format_Processing/README.md) — pipeline flow
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Support
-
-For issues and questions:
-
--   Check the documentation in `/docs`
--   Review existing issues
--   Create a new issue with detailed information
-
-## Roadmap
-
--   [ ] Additional file format support
--   [ ] Web interface
--   [ ] Batch processing
--   [ ] Cloud deployment options
--   [ ] Plugin system
--   [ ] Performance optimizations
+MIT — see `LICENSE`.

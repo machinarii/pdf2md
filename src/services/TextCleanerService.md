@@ -1,14 +1,10 @@
 # TextCleanerService
 
-Deterministic, rule-based text cleanup that runs **before** any LLM call in the pipeline. TypeScript port of `txt-cleaner.py` (the Python reference script that stays in the repo root for future pattern additions).
+The entire text-cleaning stage. Deterministic, regex-based, fully offline. TypeScript port of `txt-cleaner.py`.
 
 ## Why it exists
 
-Every chunk of extracted text flows through this service before Ollama sees it. Rationale:
-
-- **Token savings.** Don't pay `qwen3:32b` to strip page numbers that a regex catches for free.
-- **Better LLM output.** Cleaner input → cleaner output.
-- **Debuggability.** Deterministic stages produce reproducible diffs; the service returns a stats object with per-pattern removal counts.
+Raw PDF / OCR text is littered with artifacts a regex can strip reliably: page numbers, ligatures, smart quotes, running headers, hyphenated line-breaks, ResearchGate front-matter, OCR junk. A rule-based pass produces reproducible diffs you can inspect via `--keep-artifacts`.
 
 ## Pass order (load-bearing)
 
@@ -35,7 +31,7 @@ The `slides` and `academic` modes from the Python reference script are not porte
 
 ## Pipeline integration
 
-Wired into `DataLoadingPhase.ts` between text extraction and structure inference:
+Wired into `DataLoadingPhase.ts` after text extraction:
 
 ```
 step_2_Text_Extraction
@@ -43,10 +39,10 @@ step_2_Text_Extraction
   → TextCleanerService.clean(txt, { source: 'pdf' })
   → TextCleanerService.clean(ocr, { source: 'ocr' })
   → writes step2-cleaned.txt  (and step2-cleaned.ocr)
-  → step_3_Book_Structure_Inference uses the cleaned text
+  → CleanBookCommand.finalizeOutput() writes <source-basename>.md next to source
 ```
 
-Stats are logged at `info` level through `LoggerService` so you can see exactly what was stripped on each run.
+Stats land in the Pino log at `info` level — you see exactly what each pass stripped on every run.
 
 ## API
 

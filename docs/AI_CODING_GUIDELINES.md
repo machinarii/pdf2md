@@ -112,12 +112,9 @@ try {
 }
 ```
 
-### Ollama Integration
-- Local LLM endpoint; no API key required. Configured via `OLLAMA_BASE_URL`,
-  `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`.
-- Graceful degradation on failures: 1 retry on `ECONNREFUSED` at the HTTP layer,
-  1 retry on invalid JSON at the structure-inference layer, then return an empty
-  inference result so the pipeline can continue.
+### LLM Integration
+- None. The pipeline is fully local. All text cleanup is deterministic via
+  `TextCleanerService` (regex passes) and Tesseract OCR for image PDFs.
 
 ## Common Pitfalls to Avoid
 

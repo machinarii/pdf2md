@@ -12,11 +12,8 @@ import {
     LOG_LEVELS,
     PIPELINE_PHASES,
 } from '@/constants';
-import { AIEnhancementsPhase } from '@/pipeline/AIEnhancementsPhase';
 import { DataLoadingPhase } from '@/pipeline/DataLoadingPhase';
-import { EvaluationPhase } from '@/pipeline/EvaluationPhase';
 import { PipelineManager } from '@/pipeline/PipelineManager';
-import { TextNormalizationPhase } from '@/pipeline/TextNormalizationPhase';
 import { BookStructureService } from '@/services/BookStructureService';
 import { ConfigService } from '@/services/ConfigService';
 import {
@@ -45,7 +42,6 @@ interface CommanderOptions {
     debug: boolean;
     logLevel: string;
     skipStartMarker: boolean;
-    inferText?: string;
     keepArtifacts?: boolean;
 }
 
@@ -72,31 +68,14 @@ export class CleanBookCommand {
         this.registerPipelinePhases();
     }
 
-    /**
-     * Register all pipeline phases
-     */
     private registerPipelinePhases(): void {
-        const dataLoadingPhase = new DataLoadingPhase(
-            this.logger,
-            this.configService,
-            this.bookStructureService,
-        );
-        const textNormalizationPhase = new TextNormalizationPhase(this.logger);
-        const evaluationPhase = new EvaluationPhase(this.logger);
-        const aiEnhancementsPhase = new AIEnhancementsPhase(this.logger);
-
         this.pipelineManager.registerPhase(
             PIPELINE_PHASES.DATA_LOADING,
-            dataLoadingPhase,
-        );
-        this.pipelineManager.registerPhase(
-            PIPELINE_PHASES.TEXT_NORMALIZATION,
-            textNormalizationPhase,
-        );
-        this.pipelineManager.registerPhase(PIPELINE_PHASES.EVALUATION, evaluationPhase);
-        this.pipelineManager.registerPhase(
-            PIPELINE_PHASES.AI_ENHANCEMENTS,
-            aiEnhancementsPhase,
+            new DataLoadingPhase(
+                this.logger,
+                this.configService,
+                this.bookStructureService,
+            ),
         );
     }
 
@@ -135,10 +114,6 @@ export class CleanBookCommand {
                 false,
             )
             .option(
-                `-${CLI_ALIASES[CLI_OPTIONS.INFER_TEXT]}, --${CLI_OPTIONS.INFER_TEXT} <filename>`,
-                'Path to text file for structure inference',
-            )
-            .option(
                 '--keep-artifacts',
                 'Preserve book-artifacts/<book>/ after a successful run (default: deleted once the cleaned .md is written next to the source)',
                 false,
@@ -146,45 +121,33 @@ export class CleanBookCommand {
             .addHelpText(
                 'after',
                 `
-Filename convention:
-  Input files should follow <author>#<title>[#<book-index>].<ext>
-  Examples:
-    Rudolf_Steiner#Goethes_Naturwissenschaftliche_Schriften#GA_1.pdf
-    Jane_Doe#Sample_Book.epub
-
-Pipeline:
+Pipeline (fully local, no LLM, no network):
   1. File-format detection and validation
-  2. Text extraction (embedded text + Tesseract OCR for image PDFs)
+  2. Text extraction — embedded PDF text / EPUB chapters / Tesseract OCR for image PDFs
   3. Deterministic cleanup via TextCleanerService
      (Unicode normalization, ligatures, page numbers, hyphen rejoining,
-      repeated header/footer removal, paragraph rewrap)
-  4. Book-structure inference via a local Ollama model
-  5. Structure normalization / footnote handling / OCR QC
+      repeated header/footer removal, paragraph rewrap, OCR artifact fixes)
+  4. Writes <source-basename>.md next to the source file
+  5. Deletes book-artifacts/<book>/ (unless --keep-artifacts)
+
+Filename convention (optional):
+  <author>#<title>[#<book-index>].<ext>
+  Files without this pattern fall back to author="Unknown", title=<basename>.
 
 Environment variables:
-  OLLAMA_BASE_URL   Ollama endpoint (default http://localhost:11434/v1)
-  OLLAMA_MODEL      Model tag       (default qwen3:32b)
-  OLLAMA_NUM_CTX    Context tokens  (default 32768)
-  LOG_LEVEL         debug | info | warn | error | fatal
-  OUTPUT_DIR        Default output directory
-  CONFIG_DIR        Configuration directory
-
-Prerequisites:
-  - Node version matching .nvmrc
-  - Ollama running locally (https://ollama.com)
-  - Model pulled, e.g. \`ollama pull qwen3:32b\`
+  LOG_LEVEL    debug | info | warn | error | fatal
+  OUTPUT_DIR   Default value for -o
+  CONFIG_DIR   Override book-artifacts/ location (absolute path)
 
 Examples:
   clean-book some-report.pdf
+  clean-book -s anything.pdf                       # skip boundary prompt
   clean-book -v -l debug Author#Title.pdf
-  clean-book -s anything.pdf                    # skip boundary prompt
-  OLLAMA_MODEL=llama3.1:8b clean-book book.pdf
-  clean-book --keep-artifacts Author#Title.pdf  # preserve intermediates
+  clean-book --keep-artifacts Author#Title.pdf     # preserve intermediates
 
 More:
-  README.md                         pipeline + dev setup
-  src/services/TextCleanerService.md  deterministic cleanup passes
-  src/services/OllamaService.md       LLM client + retry behavior
+  README.md                            top-level overview
+  src/services/TextCleanerService.md   cleanup pass order + knobs
 `,
             )
             .action(async (inputFile: string, options: CommanderOptions) => {
@@ -375,9 +338,6 @@ More:
         inputFile: string,
         options: CommanderOptions,
     ): Promise<CLIOptions> {
-        // Note: infer-text file validation will be done during processing
-        // to allow the step to be omitted if the file doesn't exist
-
         const cliOptions: CLIOptions = {
             inputFile: path.resolve(inputFile),
             outputDir: options.outputDir
@@ -388,7 +348,6 @@ More:
             debug: options.debug,
             logLevel: options.logLevel as LogLevel,
             skipStartMarker: options.skipStartMarker,
-            inferText: options.inferText,
         };
 
         return cliOptions;
@@ -664,10 +623,9 @@ More:
      * user passed `--keep-artifacts`) remove the per-book artifacts dir.
      *
      * Picks the most-processed artifact available:
-     *   1. `phase1/step3.txt` — post Ollama structure inference
-     *   2. `phase1/step2-cleaned.ocr` — post TextCleanerService, OCR path
-     *   3. `phase1/step2-cleaned.txt` — post TextCleanerService
-     *   4. `phase1/step2.ocr` / `step2.txt` — raw extraction
+     *   1. `phase1/step2-cleaned.ocr` — post TextCleanerService, OCR path
+     *   2. `phase1/step2-cleaned.txt` — post TextCleanerService
+     *   3. `phase1/step2.ocr` / `step2.txt` — raw extraction
      */
     private async finalizeOutput(
         inputFile: string,
@@ -681,7 +639,6 @@ More:
         const phase1Dir = path.join(bookDir, 'phase1');
 
         const candidates = [
-            path.join(phase1Dir, 'step3.txt'),
             path.join(phase1Dir, 'step2-cleaned.ocr'),
             path.join(phase1Dir, 'step2-cleaned.txt'),
             path.join(phase1Dir, 'step2.ocr'),

@@ -2,7 +2,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import {
-    DEFAULT_AI_CONFIG,
     DEFAULT_ARTIFACTS_DIR,
     DEFAULT_BOOK_MANIFEST_FILE,
     DEFAULT_CHAPTER_MARKERS,
@@ -12,12 +11,10 @@ import {
     DEFAULT_OUTPUT_DIR,
     DEFAULT_PARAGRAPH_MARKERS,
     DEFAULT_SECTION_MARKERS,
-    ENV_VARS,
     ERROR_CODES,
     LOG_COMPONENTS,
     OCR_ENGINES,
     OCR_LANGUAGES,
-    OLLAMA_DEFAULTS,
     OUTPUT_FORMATS,
 } from '@/constants';
 import type {
@@ -228,18 +225,6 @@ export class ConfigService {
                     failOnLowQuality: false,
                 },
             },
-            ai: {
-                baseUrl:
-                    process.env[ENV_VARS.OLLAMA_BASE_URL] || OLLAMA_DEFAULTS.BASE_URL,
-                model: process.env[ENV_VARS.OLLAMA_MODEL] || OLLAMA_DEFAULTS.MODEL,
-                numCtx: process.env[ENV_VARS.OLLAMA_NUM_CTX]
-                    ? Number(process.env[ENV_VARS.OLLAMA_NUM_CTX])
-                    : OLLAMA_DEFAULTS.NUM_CTX,
-                temperature: DEFAULT_AI_CONFIG.TEMPERATURE,
-                maxTokens: DEFAULT_AI_CONFIG.MAX_TOKENS,
-                retries: DEFAULT_AI_CONFIG.RETRIES,
-                timeout: DEFAULT_AI_CONFIG.TIMEOUT,
-            },
             output: {
                 format: OUTPUT_FORMATS.MARKDOWN,
                 includeMetadata: true,
@@ -250,32 +235,6 @@ export class ConfigService {
         };
     }
 
-    /**
-     * Merge environment variables into configuration
-     */
-    private mergeEnvironmentVariables(config: BookConfig): void {
-        const baseUrl = process.env[ENV_VARS.OLLAMA_BASE_URL];
-        if (baseUrl) {
-            config.ai.baseUrl = baseUrl;
-        }
-
-        const model = process.env[ENV_VARS.OLLAMA_MODEL];
-        if (model) {
-            config.ai.model = model;
-        }
-
-        const numCtxRaw = process.env[ENV_VARS.OLLAMA_NUM_CTX];
-        if (numCtxRaw) {
-            const numCtx = Number(numCtxRaw);
-            if (Number.isFinite(numCtx) && numCtx > 0) {
-                config.ai.numCtx = numCtx;
-            }
-        }
-    }
-
-    /**
-     * Validate configuration
-     */
     /**
      * Clear configuration cache
      */

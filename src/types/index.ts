@@ -410,7 +410,6 @@ export interface BookConfig {
     title: string;
     textBoundaries: TextBoundaryConfig;
     processing: ProcessingConfig;
-    ai: AIConfig;
     output: OutputConfig;
 }
 
@@ -453,16 +452,6 @@ export interface QualityConfig {
     minimumConfidence: number;
     requireManualReview: boolean;
     failOnLowQuality: boolean;
-}
-
-export interface AIConfig {
-    baseUrl: string;
-    model: string;
-    numCtx: number;
-    temperature: number;
-    maxTokens: number;
-    retries: number;
-    timeout: number;
 }
 
 export type OutputFormat = 'markdown' | 'html' | 'text';
@@ -538,7 +527,6 @@ export interface CLIOptions {
     logLevel?: LogLevel;
     config?: string;
     skipStartMarker?: boolean;
-    inferText?: string;
 }
 
 export interface CLIContext {

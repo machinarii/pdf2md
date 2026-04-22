@@ -1,178 +1,36 @@
-# BookStructureService Directory
+# BookStructureService
 
-This directory contains all services related to book structure management, analysis, and inference.
+Loads, caches, and updates the per-book `book-manifest.yaml` file that lives under `book-artifacts/<author>#<title>/`. The manifest holds:
 
-## Services Overview
+- Author / title / book-index metadata
+- Optional text boundaries (`text-before-first-chapter`, `text-after-last-chapter`, or page ranges)
+- Book-type hint (used by `BookTypesService` to look up publisher-specific text-removal regex in `book-types.yaml`)
 
-### BookStructureService.ts
-**Purpose**: Main service for managing book structure YAML files and manifest operations.
+## Files in this directory
 
-**Key Responsibilities**:
-- Load and cache book manifests
-- Create and update book structure files
-- Validate book structure entries
-- Compare structure entries for similarity
-- **NEW**: AI-powered structure inference using Ollama
+| File | Purpose |
+|------|---------|
+| `BookStructureService.ts` | Manifest CRUD, caching, file-info reconciliation |
+| `BookTypesService.ts` | Loads `book-artifacts/book-types.yaml`, returns text-removal regex patterns |
 
-**Key Methods**:
-- `loadBookManifest()` - Load and cache book manifest
-- `createBookStructure()` - Create new book structure file
-- `updateBookManifest()` - Update cached manifest and save to file
-- `inferBookStructure()` - AI-powered structure correction (TOC and paragraphs)
-- `validateStructureEntries()` - Validate TOC and paragraph entries
-- `compareStructureEntries()` - Compare structure entries for similarity
+## Typical usage
 
-### BookTypesService.ts
-**Purpose**: Service for managing book types and their configurations.
+```ts
+import { BookStructureService, BookTypesService } from '@/services/BookStructureService';
 
-**Key Responsibilities**:
-- Load book types configuration from `book-types.yaml`
-- Provide text removal patterns for different book types
-- Manage header type configurations
-- Cache book type configurations
+const svc = new BookStructureService(logger, artifactsDir);
+const manifest = await svc.loadBookManifest(metadata);
 
-**Key Methods**:
-- `loadBookTypes()` - Load book types configuration
-- `getTextRemovalPatterns()` - Get patterns for specific book type
-- `getHeaderTypeConfig()` - Get header configuration for book type
-- `getAvailableBookTypes()` - List all available book types
-
-### StructureAnalyzer.ts
-**Purpose**: Service for analyzing book structure and extracting hierarchical information.
-
-**Key Responsibilities**:
-- Analyze headers, footnotes, paragraphs, and dialogues
-- Build hierarchy from detected headers
-- Assess structure quality and identify issues
-- Generate structural recommendations
-
-**Key Methods**:
-- `analyzeStructure()` - Main analysis method
-- `analyzeHeaders()` - Detect chapter, lecture, section headers
-- `analyzeFootnotes()` - Identify footnote patterns
-- `analyzeParagraphs()` - Analyze paragraph structure
-- `buildHierarchy()` - Create hierarchical structure
-- `assessStructureQuality()` - Evaluate structure quality
-
-### StructureInferrer.ts
-**Purpose**: AI-powered service for structure inference and correction.
-
-**Key Responsibilities**:
-- Generate Ollama prompts for structure analysis
-- Process AI responses for structure matching
-- Handle text chunking and response merging
-- Manage structure corrections and new entries
-
-**Key Methods**:
-- `inferStructureFromChunk()` - Process text chunk with AI
-- `generatePrompt()` - Create Ollama prompts
-- `parseAIResponse()` - Parse and validate AI responses
-- `mergeChunkResponses()` - Merge multiple chunk results
-- `validateOptions()` - Validate inference configuration
-
-## Architecture
-
-```
-BookStructureService/
-├── index.ts                    # Main exports
-├── README.md                   # This documentation
-├── BookStructureService.ts     # Core manifest management
-├── BookTypesService.ts         # Book type configurations
-├── StructureAnalyzer.ts        # Structure analysis
-└── StructureInferrer.ts        # AI-powered inference
+const types = new BookTypesService(logger, configService);
+const patterns = await types.getTextRemovalPatterns(); // union of all types' patterns
 ```
 
-## Dependencies
+`getTextRemovalPatterns()` called without a book-type returns the **union** of every type's regex list from `book-types.yaml` — useful for ad-hoc PDFs where the publisher isn't known.
 
-### Internal Dependencies
-- `TextChunker` - For text chunking in AI inference
-- `OllamaService` - For local LLM API integration
-- `LoggerService` - For structured logging
-- `ConfigService` - For configuration management
+## Error handling
 
-### External Dependencies
-- `js-yaml` - YAML parsing and generation
-- `uuid` - Unique ID generation
-- `node:fs` - File system operations
-- `node:path` - Path manipulation
+- Missing manifest → prompts the CLI layer to create one.
+- Failed manifest loads throw `AppError(CONFIG_INVALID)`.
+- Unknown book types fall back to the union-of-all patterns and log a warning.
 
-## Usage Examples
-
-### Basic Book Structure Management
-```typescript
-import { BookStructureService } from '@/services/BookStructureService';
-
-const bookStructureService = new BookStructureService(logger);
-const manifest = await bookStructureService.loadBookManifest(metadata);
-```
-
-### AI-Powered Structure Inference
-```typescript
-import { BookStructureService } from '@/services/BookStructureService';
-
-const result = await bookStructureService.inferBookStructure(
-    metadata,
-    textSource,
-    {
-        chunkSize: 5000,
-        overlapPercentage: 20,
-        maxRetries: 3,
-        confidenceThreshold: 0.7,
-        enableNewEntries: true,
-        enableCorrections: true,
-    }
-);
-```
-
-### Book Type Configuration
-```typescript
-import { BookTypesService } from '@/services/BookStructureService';
-
-const bookTypesService = new BookTypesService(logger, configService);
-const patterns = await bookTypesService.getTextRemovalPatterns('rudolf-steiner-ga-werk');
-```
-
-### Structure Analysis
-```typescript
-import { StructureAnalyzer } from '@/services/BookStructureService';
-
-const analyzer = new StructureAnalyzer(logger);
-const analysis = await analyzer.analyzeStructure(fileInfo, extractedText, metadata);
-```
-
-## Integration with Pipeline
-
-These services are integrated into the book cleaning pipeline:
-
-1. **DataLoadingPhase** - Uses BookStructureService for manifest loading
-2. **TextExtractor** - Uses BookStructureService for structure validation
-3. **TextEnhancer** - Uses BookTypesService for text removal patterns
-4. **Step 3 (Structure Inference)** - Uses StructureInferrer for AI-powered corrections
-
-## Configuration
-
-### Environment Variables
-- `OLLAMA_BASE_URL` - Ollama OpenAI-compatible endpoint (default `http://localhost:11434/v1`)
-- `OLLAMA_MODEL` - Model name (default `qwen3:32b`)
-- `OLLAMA_NUM_CTX` - Context window in tokens (default `32768`)
-
-### Configuration Files
-- `book-artifacts/default-book-manifest.yaml` - Default manifest template
-- `book-artifacts/book-types.yaml` - Book type configurations
-- `book-artifacts/{author}#{title}/book-manifest.yaml` - Book-specific manifests
-
-## Error Handling
-
-All services follow the project's error handling patterns:
-- Use `AppError` for application-specific errors
-- Include context and cause chaining
-- Gracefully degrade on Ollama failures (1 retry on ECONNREFUSED, 1 JSON-parse retry)
-- Graceful degradation for missing files or configurations
-
-## Testing
-
-Each service can be tested independently:
-- Unit tests for individual methods
-- Integration tests for service interactions
-- Mock external dependencies (file system, API calls)
-- Test error conditions and edge cases 
+No LLM / network / API calls. Everything is local YAML + regex.
