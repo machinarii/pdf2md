@@ -2,22 +2,9 @@
 
 A converter that reads PDFs at the span level (font, size, weight, position), decides what kind of document it is holding, infers structure from evidence rather than regex guesswork, and emits clean Markdown with YAML metadata, a grouped table of contents, and every content type rendered appropriately.
 
-Reads PDF, EPUB, DOCX, and — through LibreOffice — DOC, ODT and RTF. Validated on eight PDFs of four genres and three production pipelines:
+Reads PDF, EPUB, DOCX, and — through LibreOffice — DOC, ODT and RTF. Validated on real ebooks, research papers, slide decks and business documents, spanning several production pipelines: authored LaTeX, OCR'd page scans, and Word, Impress and Writer exports.
 
-| Document | Type | Pages | Text layer | Sections | Tables | Figures |
-|---|---|---|---|---|---|---|
-| Sutton & Barto, *Reinforcement Learning* 2e | book | 548 | LaTeX, authored | 17 ch · 183 numbered | 5 | 152 |
-| Banfield, *Design Leadership* | book | 333 | OCRmyPDF (AppleOCR) | 8 ch · 44 unnumbered | 0 | 0 |
-| Ortony, Clore & Collins, *Cognitive Structure of Emotions* 2e | book | 575 | OCRmyPDF (AppleOCR) | 10 ch · 53 unnumbered | 0 | 22 |
-| Ammar et al. 2018 (NAACL) | paper | 8 | LaTeX, two-column | 6 + 6 sub | 3 | 0 |
-| Futoma et al. 2017 (arXiv / MLHC) | paper | 12 | LaTeX, arXiv sidebar | 5 + 16 sub | 0 | 1 |
-| Wang & Neumann 2008 (workshop) | paper | 5 | Word → Distiller | 5 + 2 sub | 1 | 0 |
-| Q3 growth review (generated) | deck | 12 | LibreOffice Impress | 4 dividers · 8 slides | 0 | 0 |
-| Spam-detection PRD (generated) | document | 2 | LibreOffice Writer | 8 + 4 sub | 1 | 0 |
-
-The zeros are correct: the OCR'd books have no typeset tables and Design Leadership's page images are pre-cropped so there is no running-head furniture; the arXiv paper and the deck have no tables.
-
-A second, unseen sweep of 17 documents from library test corpora and generators — a Japanese academic slide deck, a NAACL paper, the DMCA summary, a Federal Register issue (three columns), a tax form, a Google Docs page, budget tables, a Japanese page, a memo, a whitepaper, a landscape vendor table, a 4:3 deck, and an image-only scan — converts 16 of 17 (the scan is refused by design) with every type call defensible. Ten regression tests cover the eight core documents, the four generated sweep documents, five optional third-party ones, and type-classification margins.
+A further sweep of 17 unseen documents from library test corpora and generators — a Japanese academic slide deck, a NAACL paper, the DMCA summary, a Federal Register issue (three columns), a tax form, a Google Docs page, budget tables, a Japanese page, a memo, a whitepaper, a landscape vendor table, a 4:3 deck, and an image-only scan — converts 16 of 17 (the scan is refused by design) with every type call defensible. Ten regression tests cover the core documents, the four generated sweep documents, five optional third-party ones, and type-classification margins.
 
 ---
 
