@@ -52,6 +52,7 @@ DOC / ODT / RTF input additionally needs LibreOffice (`soffice`) on `PATH` or pa
 - [Testing](#testing)
 - [Known gaps](#known-gaps)
 - [Files](#files)
+- [License](#license)
 
 ---
 
@@ -510,3 +511,9 @@ requirements.txt         # pymupdf
 ```
 
 The modular development build (`pdf2md.py`, `regimes.py`, `outline.py`, `doctype.py`, `papers.py`, `decks.py`, `documents.py`, `build_single.py`), the regression suite `test_books.py`, and the PDF / EPUB / DOCX fixtures with their `.md` outputs are kept outside this repository.
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
