@@ -34,6 +34,7 @@ DOC / ODT / RTF input additionally needs LibreOffice (`soffice`) on `PATH` or pa
 - [Output format](#output-format)
 - [CLI reference](#cli-reference)
 - [Findings](#findings)
+- [Audit and fixes](#audit-and-fixes)
 - [Design principles](#design-principles)
 - [Robustness sweep](#robustness-sweep)
 - [Testing](#testing)
@@ -89,7 +90,7 @@ Stage 4  ASSEMBLE   merge split / wrapped headings -> OUTLINE TREE (levels,
                     -> render each kind -> head (YAML, title block, grouped TOC)
 ```
 
-Two builds exist and are byte-for-byte equivalent in output. **This repository ships the single-file build**, `pdf2md_all.py` (4,360 lines), which merges all seven modules and is produced by `build_single.py`. Section banners mark where each module begins; the design notes in each module docstring are kept. `python3 pdf2md_all.py in.pdf` is the whole tool. `structured.py` is also kept here as a standalone module for importing the EPUB / DOCX readers on their own.
+Two builds exist and are byte-for-byte equivalent in output. **This repository ships the single-file build**, `pdf2md_all.py` (4,675 lines), which merges all seven modules and is produced by `build_single.py`. Section banners mark where each module begins; the design notes in each module docstring are kept. `python3 pdf2md_all.py in.pdf` is the whole tool. `structured.py` is also kept here as a standalone module for importing the EPUB / DOCX readers on their own.
 
 The modular development build is kept outside this repository. Its shape, which is also the map of the section banners inside the single file:
 
@@ -102,7 +103,7 @@ The modular development build is kept outside this repository. Its shape, which 
 | `papers.py` | 284 | paper signals, document-level column template, title block, heading promotion |
 | `decks.py` | 87 | slide rendering |
 | `documents.py` | 66 | PRD / spec / memo title block and metadata fields |
-| `structured.py` | 653 | EPUB / DOCX readers, CSS style ranking, LibreOffice conversion |
+| `structured.py` | 801 | EPUB / DOCX readers, CSS style ranking, LibreOffice conversion |
 | `build_single.py` | 85 | merges the modules into `pdf2md_all.py` |
 | `test_books.py` | ~245 | regression suite (eleven tests, ~100 invariants, 16–21 documents) |
 
@@ -395,6 +396,40 @@ What each document taught, in the order it was learned. Each is a rule in the co
 
 ---
 
+## Audit and fixes
+
+An adversarial review of both readers, driven by generated hostile fixtures, found nineteen defects. All are fixed, and each has a test in `tests/test_regressions.py`. They are recorded here because the failure mode they share is the dangerous one: **the converter exited 0 and wrote a plausible file with content missing from it.**
+
+### Silent content loss
+
+1. **A rename corrupted a regex in the shipped build.** The single-file build renames `W` to `WML`; applied without word boundaries, it rewrote `re.sub(r"\W", ...)` into `re.sub(r"\WML", ...)`, disabling EPUB heading de-duplication in `pdf2md_all.py` while `structured.py` stayed correct. Nothing compared the two copies. `tools/sync_structured.py` now renames NAME tokens only, and CI fails if the copies diverge.
+2. **`<div class="footnote">` swallowed the rest of the chapter.** The note was pushed and never popped, so every later paragraph in the file was relabelled a footnote and merged under one colliding id.
+3. **An inline `<section epub:type="toc">` truncated the file.** It raised a skip counter that only `script`/`style`/`nav` ever lowered.
+4. **An unclosed tag inside a noteref anchor dropped everything after it.** Suppression was popped only when the sentinel sat on top of the stack.
+5. **A detected table was deleted or flattened.** Cells were claimed by the table pass, then re-typed as list items or stolen by the front-matter labeller; the table was emitted only at one remembered cell, so re-typing that cell erased the whole grid.
+6. **A chapter title beginning with a year demoted every later chapter.** `2019 Annual Review` tokenised as section 20, which advanced the outline spine past every real chapter.
+7. **One ellipsis run deleted a page.** Four dots on a sparse page cleared the dot-leader ratio and the page was dropped as a printed contents page.
+8. **A nested table wiped the enclosing one.** The inner `<table>` reset the shared row buffer.
+9. **Figures collided on basename.** `img/a/fig.png` and `img/b/fig.png` both became `fig.png`; the second overwrote the first and both links pointed at it.
+
+### Wrong output
+
+10. **Footnotes all rendered as `[^*]` and merged.** Notes detected during classification carried no number, so consecutive notes were joined and every definition shared one label. Labels are now page-qualified and unique.
+11. **Cross-file endnotes dangled.** References were namespaced by the file they appeared in rather than the file the note lives in, so a reference and its definition never matched.
+12. **A backslash in any metadata value produced unparseable YAML.** `_yq` escaped the quote but not the backslash.
+13. **Number-led lines got an invalid escape.** The backslash landed before the digits, where Markdown does not honour it, leaving a literal `\` in the prose.
+14. **Headings with a parenthetical were demoted to prose.** `(` and `)` were missing from the prose-character set behind a 90% gate.
+15. **A DOCX footnote cited twice was defined twice.**
+16. **A mislabelled encoding was decoded as UTF-8 regardless.** Latin-1 text became replacement characters; a legal UTF-16 document became NUL bytes and raw markup in the output.
+17. **An untitled document emitted `title: ""` and a bare `#`.**
+18. **`--pages 1,1` converted the page twice.**
+
+### Crashes and diagnostics
+
+19. **Fifteen inputs produced a raw traceback** instead of a diagnosis: a non-PDF, a directory, an encrypted PDF, a malformed `--pages` spec, a non-zip EPUB or DOCX, an EPUB missing a rootfile / navMap / navLabel / manifest href, a DOCX with no `w:body`, a malformed CSS `font-size`, a failing LibreOffice, and an output path whose directory did not exist. `--emit-json` crashed with `RecursionError` on any document containing a table, because the JSON walk followed back-references between lines. A page range outside the document reported "this is an image-only scan, run OCR" — a confident diagnosis of the wrong problem.
+
+Also fixed: `--figure-vlm` was accepted without `--figure-dir` and silently did nothing; a failing vision model was swallowed without a word, against the project's own "a silent failure is worse than a loud one" principle; the PDF handle, the EPUB zip handle and LibreOffice's temp directory were never released.
+
 ## Design principles
 
 **Decide the genre first, with evidence.** Everything downstream assumes one. Score independent families, record why, allow override.
@@ -448,7 +483,15 @@ pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_smoke.py` generates a small PDF and an EPUB on the fly and checks that the converter exits 0, emits YAML front matter, reflows paragraphs, and reads EPUB metadata, headings and lists. CI runs it on Python 3.10–3.13.
+Three suites, all generating their fixtures at runtime so no binaries live in the repository:
+
+| File | Covers |
+|---|---|
+| `tests/test_smoke.py` | a PDF and an EPUB convert: YAML front matter, paragraph reflow, artifacts, EPUB metadata / headings / lists |
+| `tests/test_errors.py` | every bad-input path exits with a readable message and no traceback: non-PDF, directory, encrypted, malformed `--pages`, non-zip EPUB/DOCX, overwriting the input |
+| `tests/test_regressions.py` | one test per defect fixed in the audit below, plus a build-integrity check that `pdf2md_all.py` still matches `structured.py` |
+
+CI runs all three on Python 3.10–3.13.
 
 The full regression suite (`test_books.py`) and its fixtures live with the modular development build and are not in this repository. It runs the eight core fixtures, the four generated sweep documents, and any of the five third-party sweep documents that are present, with `--artifacts`, and asserts ~80 golden invariants:
 
@@ -484,18 +527,26 @@ The suite found real bugs on its first run and on the first tree implementation.
 - **Deck fixtures are synthetic.** A real PowerPoint export with charts, SmartArt and two-column layouts will stress the per-slide path further; speaker notes are not in exported PDFs.
 - **Image-only PDFs** are refused; run Chandra 2 or Marker first.
 - **Structured input coverage** is what four generated fixtures exercise: no real-world EPUB with images, nested lists in footnotes, or a multi-level nav has been run yet; DOCX tracked changes, comments and text boxes are ignored.
+- **Nested tables** are flattened, not nested: the inner table is emitted as its own table and the cell that held it is left empty. Markdown has no nested-table syntax; the cell text survives, the containment does not.
+- **Footnote labels are page-qualified** (`[^p12-3]`) because printed numbering restarts on every page. They are stable and unique, but they are not the numbers the book printed.
+- **A document whose declared encoding is wrong** is decoded by trying UTF-8, then cp1252, then latin-1. That recovers the common mislabelled-Western-European case and will still mis-decode a mislabelled document in another script.
 
 ---
 
 ## Files
 
 ```
-pdf2md_all.py            # single-file build (everything); `python3 pdf2md_all.py in.pdf` is the whole tool
-structured.py            # EPUB / DOCX / DOC reader module (also merged into pdf2md_all.py)
-tests/test_smoke.py      # generated-fixture smoke tests
-examples/minibook-epub3.md   # sample output from the pandoc EPUB 3 mini-book fixture
-requirements.txt         # pymupdf
+pdf2md_all.py               # single-file build (everything); `python3 pdf2md_all.py in.pdf` is the whole tool
+structured.py               # EPUB / DOCX / DOC reader module (also merged into pdf2md_all.py)
+tools/sync_structured.py    # copies structured.py into the merged build; --check fails if they diverge
+tests/test_smoke.py         # conversion smoke tests
+tests/test_errors.py        # bad-input diagnostics
+tests/test_regressions.py   # one test per fixed defect + build-integrity check
+examples/minibook-epub3.md  # sample output from the pandoc EPUB 3 mini-book fixture
+requirements.txt            # pymupdf
 ```
+
+`structured.py` is inlined into `pdf2md_all.py` with three globals renamed. Edit `structured.py`, then run `python3 tools/sync_structured.py`; it renames NAME tokens only, so a rename can never reach inside a string or a regex. `--check` is wired into CI.
 
 The modular development build (`pdf2md.py`, `regimes.py`, `outline.py`, `doctype.py`, `papers.py`, `decks.py`, `documents.py`, `build_single.py`), the regression suite `test_books.py`, and the PDF / EPUB / DOCX fixtures with their `.md` outputs are kept outside this repository.
 

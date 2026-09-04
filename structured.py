@@ -19,7 +19,6 @@ Only the standard library is used: zipfile, xml.etree, html.parser.
 
 from __future__ import annotations
 
-import html
 import re
 import shutil
 import subprocess
@@ -56,10 +55,15 @@ def css_style_map(css: str) -> dict[str, dict]:
     for m in re.finditer(r"([^{}]+)\{([^}]*)\}", css):
         selectors, body = m.group(1), m.group(2)
         size = None; bold = None
-        ms = re.search(r"font-size\s*:\s*([\d.]+)\s*(pt|px|em|%|rem)?", body)
+        ms = re.search(r"font-size\s*:\s*(\d*\.?\d+)\s*(pt|px|em|%|rem)?", body)
         if ms:
-            v = float(ms.group(1)); u = ms.group(2) or "pt"
-            size = v if u == "pt" else v * 0.75 if u == "px" else v * 12 if u in ("em", "rem") else v * 0.12
+            try:
+                v = float(ms.group(1))
+            except ValueError:                  # a malformed rule is not fatal
+                v = None
+            u = ms.group(2) or "pt"
+            if v is not None:
+                size = v if u == "pt" else v * 0.75 if u == "px" else v * 12 if u in ("em", "rem") else v * 0.12
         mw = re.search(r"font-weight\s*:\s*(bold|[6-9]00)", body)
         if mw: bold = True
         if re.search(r"font-weight\s*:\s*(normal|400)", body): bold = False
@@ -111,13 +115,58 @@ BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre"
               "dt", "dd"}
 
 
+def decode_xml(raw: bytes) -> str:
+    """Decode XHTML/XML honouring its BOM or declared encoding.
+
+    Decoding everything as UTF-8 mangled latin-1 accents into replacement
+    characters, and turned a perfectly legal UTF-16 document into a wall of
+    NUL bytes that html.parser saw no tags in -- the whole file then landed
+    in the output as one paragraph of raw markup.
+    """
+    for bom, enc in ((b"\xef\xbb\xbf", "utf-8-sig"), (b"\xff\xfe", "utf-16"),
+                     (b"\xfe\xff", "utf-16")):
+        if raw.startswith(bom):
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                break
+    head = raw[:1024]
+    m = re.search(br"""encoding\s*=\s*["']([-\w.]+)["']""", head)
+    if not m:
+        m = re.search(br"""charset\s*=\s*["']?([-\w.]+)""", head, re.I)
+    if m:
+        enc = m.group(1).decode("ascii", "replace")
+        if enc.lower().replace("_", "-") not in ("utf-8", "utf8", "us-ascii", "ascii"):
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                pass
+    # A file that declares utf-8 but is not utf-8 is common in the wild.
+    # Losing every accented word to U+FFFD is worse than trying the two
+    # encodings that actually produce readable text; only if both fail do we
+    # fall back to lossy replacement.
+    for enc in ("utf-8", "cp1252", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+             "link", "meta", "param", "source", "track", "wbr"}
+
+
 class _HtmlBlocks(HTMLParser):
     """Linear pass over an XHTML chapter, emitting Blocks. Inline emphasis is
     kept as Markdown; footnote references become [^id] markers."""
 
-    def __init__(self, style_map: dict | None = None):
+    def __init__(self, style_map: dict | None = None,
+                 spine_index: dict | None = None, href: str = ""):
         super().__init__(convert_charrefs=True)
         self.style_map = style_map or {}
+        self.spine_index = spine_index or {}
+        self.href = href
         self.blocks: list[Block] = []
         self.stack: list[str] = []
         self.buf: list[str] = []
@@ -133,6 +182,8 @@ class _HtmlBlocks(HTMLParser):
         self.title = ""
         self.in_title = False
         self.suppress = 0                   # inside a noteref / backlink anchor
+        self.open_els: list[tuple[str, list[str]]] = []   # (tag, state to undo on close)
+        self.table_stack: list[list[list[str]]] = []      # enclosing tables' rows
 
     # ---- helpers
     def _apply_style(self, cls: str):
@@ -161,17 +212,31 @@ class _HtmlBlocks(HTMLParser):
         self.cur = Block(kind, **kw)
 
     # ---- parser callbacks
+    #
+    # Every piece of parser state that spans elements (skip, note, suppress,
+    # table rows, inline emphasis) is owned by the element that opened it and
+    # is undone when that element closes. The previous model used bare
+    # counters keyed to a handful of tag names, which meant a
+    # <section epub:type="toc"> or a <div class="footnote"> raised a counter
+    # that nothing ever lowered: everything after it in the file was silently
+    # dropped, or silently relabelled a footnote.
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         types = (a.get("epub:type") or a.get("role") or "").lower()
         cls = (a.get("class") or "").lower()
+        undo: list[str] = []
+
+        def done():
+            if tag not in VOID_TAGS:
+                self.open_els.append((tag, undo))
+
         if tag in ("script", "style", "nav") or "toc" in types:
-            self.skip += 1
-            return
+            self.skip += 1; undo.append("skip"); return done()
         if self.skip:
-            return
+            return done()
         if tag == "title":
-            self.in_title = True; return
+            self.in_title = True; undo.append("title"); return done()
+
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self._start("heading", level=int(tag[1]))
         elif tag == "p":
@@ -185,6 +250,7 @@ class _HtmlBlocks(HTMLParser):
             self._apply_style(cls)                  # size often lives on the span
         elif tag in ("ul", "ol"):
             self._flush(); self.list_depth += 1; self.list_ordered.append(tag == "ol")
+            undo.append("list")
         elif tag == "li" and self.note:
             # pandoc / EPUB 3: <section role="doc-endnotes"><ol><li id="fn1"><p>...
             if a.get("id"):
@@ -193,13 +259,16 @@ class _HtmlBlocks(HTMLParser):
         elif tag == "li":
             self._start("list_item", level=self.list_depth, ordered=bool(self.list_ordered and self.list_ordered[-1]))
         elif tag == "blockquote":
-            self._flush(); self.stack.append("quote")
+            self._flush(); self.stack.append("quote"); undo.append("quote")
         elif tag == "pre":
-            self._start("code"); self.in_pre += 1
+            self._start("code"); self.in_pre += 1; undo.append("pre")
         elif tag in ("figcaption", "caption"):
             self._start("caption")
         elif tag == "table":
-            self._flush(); self.in_table += 1; self.rows = []
+            # A nested table used to wipe the enclosing table's rows.
+            self._flush(); self.in_table += 1
+            self.table_stack.append(self.rows); self.rows = []
+            undo.append("table")
         elif tag == "tr":
             self.rows.append([])
         elif tag in ("td", "th"):
@@ -213,74 +282,117 @@ class _HtmlBlocks(HTMLParser):
         elif tag == "br":
             self.buf.append(" ")
         elif tag == "aside" and ("footnote" in types or "footnote" in cls or "note" in types):
-            self._flush(); self.note.append(a.get("id", ""))
+            self._flush(); self.note.append(a.get("id", "")); undo.append("note")
         elif tag in ("div", "section", "article", "header", "footer", "dt", "dd"):
             self._flush()
             if "footnote" in cls or "footnote" in types or "endnote" in types:
-                self.note.append(a.get("id", ""))
+                self.note.append(a.get("id", "")); undo.append("note")
         elif tag == "a" and ("backlink" in types or "footnote-back" in cls or "back" in cls):
-            self.suppress += 1; self.stack.append("backlink")
+            self.suppress += 1; self.stack.append("backlink"); undo.append("backlink")
         elif tag == "a" and ("noteref" in types or "noteref" in cls or "footnote-ref" in cls or "footnote" in cls):
             href = a.get("href", "")
             nid = href.split("#")[-1] if "#" in href else href
-            self.buf.append(f"[^{nid}]")
-            self.suppress += 1; self.stack.append("noteref")
+            # Namespace by the file the note LIVES in, not the file the
+            # reference sits in: endnotes are usually a separate spine item.
+            self.buf.append(f"[^{self._note_ref(href, nid)}]")
+            self.suppress += 1; self.stack.append("noteref"); undo.append("noteref")
         elif tag in ("em", "i"):
-            self.buf.append("*"); self.stack.append("em")
+            if not self.suppress: self.buf.append("*")
+            self.stack.append("em"); undo.append("em")
         elif tag in ("strong", "b"):
-            self.buf.append("**"); self.stack.append("strong")
+            if not self.suppress: self.buf.append("**")
+            self.stack.append("strong"); undo.append("strong")
         elif tag == "code" and not self.in_pre:
-            self.buf.append("`"); self.stack.append("code")
+            if not self.suppress: self.buf.append("`")
+            self.stack.append("code"); undo.append("code")
         elif tag == "sup":
-            self.stack.append("sup")
+            self.stack.append("sup"); undo.append("sup")
+        return done()
+
+    def _note_ref(self, href: str, nid: str) -> str:
+        """Namespace a note reference by the spine file that DEFINES the note.
+
+        Prefixing by the referring file broke every endnote collected in a
+        separate document: the marker became [^1-fn1] and its definition
+        [^2-fn1], leaving a dangling reference and an orphan definition.
+        """
+        target = unquote(href.split("#")[0])
+        if not target or not self.spine_index:
+            return nid
+        target = str(Path(self.href).parent / target) if "/" in self.href else target
+        for key in (target, unquote(href.split("#")[0])):
+            if key in self.spine_index:
+                return f"{self.spine_index[key] + 1}-{nid}"
+        return nid
 
     def handle_endtag(self, tag):
-        if tag in ("script", "style", "nav"):
+        # Unwind to the matching open element, closing anything left open
+        # inside it. An unclosed <b> inside a <p> used to strand `suppress`
+        # or leak a dangling `**` into the prose.
+        idx = None
+        for i in range(len(self.open_els) - 1, -1, -1):
+            if self.open_els[i][0] == tag:
+                idx = i
+                break
+        if idx is None:
+            return                              # stray end tag with no start
+        while len(self.open_els) > idx:
+            t, undo = self.open_els.pop()
+            self._close_element(t, undo)
+
+    def _close_element(self, tag, undo):
+        if "skip" in undo:
             self.skip = max(0, self.skip - 1); return
         if self.skip:
-            if tag in ("section", "div", "article"):
-                pass
             return
-        if tag == "title":
+        if "title" in undo:
             self.in_title = False; return
+
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6", "li", "figcaption", "caption", "hr"):
             self._flush()
         elif tag == "p" and not (self.note and self.cur is not None and self.cur.kind == "footnote"):
             self._flush()
-        elif tag in ("ul", "ol"):
-            self._flush(); self.list_depth = max(0, self.list_depth - 1)
-            if self.list_ordered: self.list_ordered.pop()
-        elif tag == "blockquote":
-            self._flush()
-            if "quote" in self.stack: self.stack.remove("quote")
-        elif tag == "pre":
-            self._flush(); self.in_pre = max(0, self.in_pre - 1)
         elif tag in ("td", "th"):
             if self.cell is not None and self.rows:
                 self.rows[-1].append(re.sub(r"\s+", " ", "".join(self.cell)).strip())
             self.cell = None
-        elif tag == "table":
+
+        if "list" in undo:
+            self._flush(); self.list_depth = max(0, self.list_depth - 1)
+            if self.list_ordered: self.list_ordered.pop()
+        if "quote" in undo:
+            self._flush()
+            if "quote" in self.stack: self.stack.remove("quote")
+        if "pre" in undo:
+            self._flush(); self.in_pre = max(0, self.in_pre - 1)
+        if "table" in undo:
             self.in_table = max(0, self.in_table - 1)
             rows = [r for r in self.rows if any(c.strip() for c in r)]
             if rows:
                 self.blocks.append(Block("table", rows=rows))
-            self.rows = []
-        elif tag == "aside" and self.note:
-            self._flush(); self.note.pop()
-        elif tag in ("div", "section", "article", "header", "footer", "dt", "dd"):
+            self.rows = self.table_stack.pop() if self.table_stack else []
+        if "note" in undo:
             self._flush()
-            if self.note and tag == "div":
-                pass
-        elif tag == "a" and self.stack and self.stack[-1] in ("noteref", "backlink"):
-            self.stack.pop(); self.suppress = max(0, self.suppress - 1)
-        elif tag in ("em", "i") and "em" in self.stack:
-            self.buf.append("*"); self.stack.remove("em")
-        elif tag in ("strong", "b") and "strong" in self.stack:
-            self.buf.append("**"); self.stack.remove("strong")
-        elif tag == "code" and "code" in self.stack:
-            self.buf.append("`"); self.stack.remove("code")
-        elif tag == "sup" and "sup" in self.stack:
+            if self.note: self.note.pop()
+        if "noteref" in undo or "backlink" in undo:
+            sentinel = "noteref" if "noteref" in undo else "backlink"
+            if sentinel in self.stack: self.stack.remove(sentinel)
+            self.suppress = max(0, self.suppress - 1)
+        if "em" in undo and "em" in self.stack:
+            if not self.suppress: self.buf.append("*")
+            self.stack.remove("em")
+        if "strong" in undo and "strong" in self.stack:
+            if not self.suppress: self.buf.append("**")
+            self.stack.remove("strong")
+        if "code" in undo and "code" in self.stack:
+            if not self.suppress: self.buf.append("`")
+            self.stack.remove("code")
+        if "sup" in undo and "sup" in self.stack:
             self.stack.remove("sup")
+
+        if tag in ("div", "section", "article", "header", "footer", "dt", "dd") \
+                and "note" not in undo:
+            self._flush()
 
     def handle_data(self, data):
         if self.skip or self.suppress:
@@ -307,8 +419,9 @@ class _HtmlBlocks(HTMLParser):
         self._flush()
 
 
-def html_to_blocks(markup: str, style_map: dict | None = None) -> tuple[str, list[Block]]:
-    p = _HtmlBlocks(style_map)
+def html_to_blocks(markup: str, style_map: dict | None = None,
+                   spine_index: dict | None = None, href: str = "") -> tuple[str, list[Block]]:
+    p = _HtmlBlocks(style_map, spine_index=spine_index, href=href)
     p.feed(markup)
     p.close()
     return p.title.strip(), p.blocks
@@ -326,7 +439,10 @@ NS = {"c": "urn:oasis:names:tc:opendocument:xmlns:container",
 def read_epub(path: Path) -> tuple[dict, list[Block]]:
     z = zipfile.ZipFile(path)
     container = ET.fromstring(z.read("META-INF/container.xml"))
-    opf_path = container.find(".//c:rootfile", NS).get("full-path")
+    rootfile = container.find(".//c:rootfile", NS)
+    if rootfile is None or not rootfile.get("full-path"):
+        raise KeyError("META-INF/container.xml names no rootfile")
+    opf_path = rootfile.get("full-path")
     opf_dir = str(Path(opf_path).parent)
     opf = ET.fromstring(z.read(opf_path))
 
@@ -353,6 +469,8 @@ def read_epub(path: Path) -> tuple[dict, list[Block]]:
     items = {}
     nav_href = None
     for it in opf.findall(".//opf:manifest/opf:item", NS):
+        if not it.get("href"):
+            continue                       # a manifest item with no href is unusable
         items[it.get("id")] = (it.get("href"), it.get("media-type") or "")
         if "nav" in (it.get("properties") or "").split():
             nav_href = it.get("href")
@@ -368,20 +486,26 @@ def read_epub(path: Path) -> tuple[dict, list[Block]]:
     style_map: dict = {}
     for _id, (href, mt) in items.items():
         if mt == "text/css" and zpath(href) in z.namelist():
-            style_map.update(css_style_map(z.read(zpath(href)).decode("utf-8", "replace")))
+            style_map.update(css_style_map(decode_xml(z.read(zpath(href)))))
 
     # ---- contents truth: nav.xhtml (EPUB 3) or toc.ncx (EPUB 2)
     toc: list[tuple[int, str, str]] = []          # (depth, title, href)
     if nav_href and zpath(nav_href) in z.namelist():
-        toc = _parse_nav(z.read(zpath(nav_href)).decode("utf-8", "replace"))
+        toc = _parse_nav(decode_xml(z.read(zpath(nav_href))))
     elif ncx_id in items and zpath(items[ncx_id][0]) in z.namelist():
         ncx = ET.fromstring(z.read(zpath(items[ncx_id][0])))
         def walk(np, depth):
             for pt in np.findall("ncx:navPoint", NS):
-                label = "".join(pt.find("ncx:navLabel/ncx:text", NS).itertext()).strip()
-                src = pt.find("ncx:content", NS).get("src", "")
-                toc.append((depth, label, src)); walk(pt, depth + 1)
-        walk(ncx.find("ncx:navMap", NS), 1)
+                lbl = pt.find("ncx:navLabel/ncx:text", NS)
+                content = pt.find("ncx:content", NS)
+                label = "".join(lbl.itertext()).strip() if lbl is not None else ""
+                src = content.get("src", "") if content is not None else ""
+                if label:
+                    toc.append((depth, label, src))
+                walk(pt, depth + 1)
+        navmap = ncx.find("ncx:navMap", NS)
+        if navmap is not None:
+            walk(navmap, 1)
     meta["toc"] = toc
     title_by_file: dict[str, tuple[int, str]] = {}
     for depth, label, href in toc:
@@ -390,17 +514,25 @@ def read_epub(path: Path) -> tuple[dict, list[Block]]:
 
     # ---- chapters in spine order
     blocks: list[Block] = []
+    # position of each spine file, so a noteref can be namespaced by the file
+    # its href points AT (endnotes usually live in their own spine item).
+    spine_pos = {unquote(h.split("#")[0]): i for i, h in enumerate(spine)}
     for href in spine:
         zp = zpath(href)
         if zp not in z.namelist():
             continue
-        title, chapter = html_to_blocks(z.read(zp).decode("utf-8", "replace"), style_map)
-        idx = spine.index(href) + 1
+        title, chapter = html_to_blocks(decode_xml(z.read(zp)), style_map,
+                                        spine_index=spine_pos, href=href)
+        idx = spine_pos.get(unquote(href.split("#")[0]), 0) + 1
         for b in chapter:
             if b.note_id:
                 b.note_id = f"{idx}-{b.note_id}"
             if "[^" in b.text:
-                b.text = re.sub(r"\[\^([^\]]+)\]", lambda m: f"[^{idx}-{m.group(1)}]", b.text)
+                # a reference the parser already resolved carries its own
+                # "N-" prefix; only bare ids still need this file's index
+                b.text = re.sub(r"\[\^([^\]]+)\]",
+                                lambda m: m.group(0) if re.match(r"^\d+-", m.group(1))
+                                else f"[^{idx}-{m.group(1)}]", b.text)
         # a spine item with no heading of its own takes its title from the contents
         if not any(b.kind == "heading" for b in chapter[:6]):
             hit = title_by_file.get(unquote(href.split("#")[0]))
@@ -537,6 +669,8 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
     # ---- body
     doc = ET.fromstring(z.read("word/document.xml"))
     body = doc.find(w("body"))
+    if body is None:
+        raise KeyError("word/document.xml has no w:body")
     blocks: list[Block] = []
     used_notes: list[str] = []
 
@@ -604,7 +738,7 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
             elif el.tag == w("sectPr"):
                 continue
     walk(body)
-    for nid in used_notes:
+    for nid in dict.fromkeys(used_notes):        # cited twice, defined once
         if nid in notes:
             blocks.append(Block("footnote", text=notes[nid], note_id=nid))
     meta["zip"] = z
@@ -646,8 +780,22 @@ def convert_with_soffice(path: Path, soffice: str | None = None) -> Path:
         subprocess.run(cmd, check=True, capture_output=True, timeout=180,
                        env={"HOME": str(out_dir), "PATH": "/usr/bin:/bin:/usr/local/bin"})
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"{path.name}: LibreOffice conversion timed out")
+        shutil.rmtree(out_dir, ignore_errors=True)
+        raise RuntimeError(f"{path.name}: LibreOffice conversion timed out after 180s")
+    except subprocess.CalledProcessError as e:
+        # Only TimeoutExpired was caught before, so a failing soffice reached
+        # the user as a raw CalledProcessError -- with the stderr that says
+        # what actually went wrong thrown away.
+        detail = (e.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        shutil.rmtree(out_dir, ignore_errors=True)
+        raise RuntimeError(f"{path.name}: LibreOffice conversion failed"
+                           + (f" -- {detail[-1][:200]}" if detail else
+                              f" (exit {e.returncode})"))
+    except OSError as e:
+        shutil.rmtree(out_dir, ignore_errors=True)
+        raise RuntimeError(f"{path.name}: cannot run LibreOffice at {exe!r}: {e}")
     out = out_dir / (path.stem + ".docx")
     if not out.exists():
+        shutil.rmtree(out_dir, ignore_errors=True)
         raise RuntimeError(f"{path.name}: LibreOffice produced no DOCX")
     return out
