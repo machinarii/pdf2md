@@ -8,6 +8,34 @@ A further sweep of 17 unseen documents from library test corpora and generators 
 
 ---
 
+## Cleaner PDF Markdown
+
+Conversion automatically adapts to each PDF's text and layout:
+
+- Page-local column detection keeps research-paper paragraphs in reading order,
+  including short papers, spanning headings and changes in page width or layout.
+- Repeated short, isolated text in a distinct font style can establish headings,
+  including body-sized italic headings in unfamiliar document formats.
+- Ordinary single-font ebooks retain their authored typography instead of being
+  treated as synthetic OCR layers.
+- Running headers require repetition on distinct pages, reducing accidental
+  removal of repeated content on a single page.
+- Paragraph reflow joins line-wrapped words, including accented words, and uses
+  compounds found elsewhere in the document to preserve spellings such as
+  `self-supervised`.
+
+```bash
+python3 pdf2md_all.py ebook.pdf -o ebook.md
+python3 pdf2md_all.py paper.pdf -o paper.md --doc-type paper --no-toc
+python3 pdf2md_all.py unfamiliar.pdf -o unfamiliar.md --artifacts artifacts
+```
+
+Learning is local to the current conversion; it does not train a model or retain
+information between files. `--profile` reports learned heading styles, and
+`--artifacts` includes the supporting evidence and detected columns per page.
+These heuristics cannot reconstruct missing OCR text or guarantee exact formula
+transcription from a PDF text layer.
+
 ## Quick start
 
 ```
