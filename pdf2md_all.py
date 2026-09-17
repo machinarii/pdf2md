@@ -813,35 +813,16 @@ def is_paper(lines, doc, prof) -> bool:
 # ---------------------------------------------------------------------------
 # column-major reading order
 # ---------------------------------------------------------------------------
-def reorder_columns(lines, page_w: float) -> int:
-    """Re-sort each page's lines column-major. Returns the number of pages
-    found to be multi-column.
-
-    Columns are a property of the document's template, not of a page, so
-    they are found ONCE: a histogram of the left edges of narrow lines over
-    the whole document has one peak per column (72 and 307 for an ACL paper;
-    45, 222 and 399 for the Federal Register). Per page, a peak that is
-    populated by enough of that page's lines is an active column. Boundaries
-    sit in the gutters -- between a column's right edge and the next start
-    -- never at the midpoint of the starts, which the left column's own text
-    would cross. Spanning lines (wider than 60% of the page, or straddling a
-    gutter) split the page into bands; within a band the columns are read
-    left to right, each top to bottom. Each line gets `col` (-1 spanning,
-    else column index) and `col_left`.
-    """
-    by_page: dict[int, list] = {}
-    for l in lines:
-        by_page.setdefault(l.page, []).append(l)
-    body_all = [l for l in lines if l.kind != "furniture"]
+def _column_template(body_all, page_w):
+    """Infer occupied columns from repeated starts and substantial text widths."""
     all_x = [round(l.x0) for l in body_all]
     doc_left = statistics.mode(all_x) if all_x else 0
-    narrow_all = [l for l in body_all if (l.x1 - l.x0) < page_w * 0.45]
-
-    # ---- document-level column starts: peaks of the left-edge histogram
+    narrow_all = [l for l in body_all if (l.x1 - l.x0) < page_w * 0.55]
     cols: list[float] = []
-    if len(narrow_all) >= 40:
+    gutters: list[float] = []
+    if len(narrow_all) >= 12:
         hist = Counter(int(l.x0 // 5) * 5 for l in narrow_all)
-        floor = max(4, 0.03 * len(narrow_all))
+        floor = max(3, 0.03 * len(narrow_all))
         peaks = sorted(b for b, n in hist.items() if n >= floor
                        and n >= hist.get(b - 5, 0) and n >= hist.get(b + 5, 0))
         merged: list[float] = []
@@ -859,7 +840,7 @@ def reorder_columns(lines, page_w: float) -> int:
                 later = [s2 for s2 in merged if s2 > st + 40]
                 col_lines = [l for l in narrow_all if st - 8 <= l.x0 < (later[0] - 20 if later else page_w)]
                 x1s = sorted(l.x1 for l in col_lines)
-                if len(x1s) < 10:
+                if len(x1s) < 3:
                     continue
                 kept.append(st)
                 edges.append(x1s[int(0.9 * (len(x1s) - 1))])
@@ -868,12 +849,25 @@ def reorder_columns(lines, page_w: float) -> int:
                          for k in range(len(kept)))
             if len(kept) >= 2 and filled:
                 cols = kept
+    return cols, gutters
+
+
+def reorder_columns(lines, page_w: float | dict[int, float]) -> int:
+    """Learn columns per page and read each horizontal band column-major.
+    Full-width lines divide bands. Local inference supports changing templates,
+    unequal columns and mixed page sizes without imposing one global layout.
+    """
+    by_page: dict[int, list] = {}
+    for l in lines:
+        by_page.setdefault(l.page, []).append(l)
     multi_pages = 0
     order: list = []
     for page in sorted(by_page):
         pl = by_page[page]
         body = [l for l in pl if l.kind != "furniture"]
-        narrow = [l for l in body if (l.x1 - l.x0) < page_w * 0.45]
+        width = page_w[page] if isinstance(page_w, dict) else page_w
+        cols, gutters = _column_template(body, width)
+        narrow = [l for l in body if (l.x1 - l.x0) < width * 0.55]
         active = False
         if cols and len(body) >= 12 and len(narrow) >= 0.5 * len(body):
             use = [sum(1 for l in narrow if abs(l.x0 - c) <= 12) for c in cols]
@@ -886,7 +880,7 @@ def reorder_columns(lines, page_w: float) -> int:
             continue
         multi_pages += 1
         for l in pl:
-            wide = (l.x1 - l.x0) > page_w * 0.6
+            wide = (l.x1 - l.x0) > width * 0.6
             crosses = any(l.x0 < g - 8 and l.x1 > g + 8 for g in gutters)
             if wide or crosses:
                 l.col, l.col_left = -1, cols[0]
@@ -2395,6 +2389,8 @@ class Profile:
     toc_pages: set = field(default_factory=set)
     toc_truth: dict = field(default_factory=dict)
     body_left: float = 0.0
+    adaptive_styles: set = field(default_factory=set)
+    learning_evidence: list = field(default_factory=list)
 
 
 # ===========================================================================
@@ -2471,7 +2467,7 @@ def extract_lines(doc, page_range) -> list[Line]:
     lines.sort(key=lambda l: (l.page, round(l.y0 / 3.0), l.x0))
     page_w = doc[page_range[0]].rect.width if len(page_range) else 0
     if page_w:
-        PP.reorder_columns(lines, page_w)
+        PP.reorder_columns(lines, {p: doc[p].rect.width for p in page_range})
     return lines
 
 
@@ -2504,8 +2500,9 @@ GLYPHLESS_RE = re.compile(r"GlyphLess|Invisible|NoGlyph", re.I)
 
 
 def is_ocr_layer(lines: list[Line]) -> bool:
-    """True when the text layer was stamped on by an OCR tool (OCRmyPDF,
-    Acrobat, ABBYY) rather than authored. Such layers use ONE synthetic font
+    """True when the dominant font identifies a synthetic OCR layer (OCRmyPDF,
+    Acrobat, ABBYY). A single ordinary font is not evidence of OCR.
+    Such layers use ONE synthetic font
     for the whole book, so every font-based signal -- family, boldness, style
     identity -- is gone. Size survives, because OCR scales the invisible glyphs
     to the scanned image, but only as a noisy analog measurement."""
@@ -2514,8 +2511,8 @@ def is_ocr_layer(lines: list[Line]) -> bool:
         fonts[ln.style[0]] += len(ln.text)
     if not fonts:
         return False
-    top, n = fonts.most_common(1)[0]
-    return bool(GLYPHLESS_RE.search(top)) or n / sum(fonts.values()) > 0.97
+    top, _ = fonts.most_common(1)[0]
+    return bool(GLYPHLESS_RE.search(top))
 
 
 BODY_HEADING_RATIO = 1.15   # empirical valley: >15% larger than body median
@@ -2616,7 +2613,7 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
     # Normalise digits so "Chapter 1: Introduction 17" and "... 18" collide.
     # No minimum character length: that guard is what lets short running heads
     # like "Chapter 1: Introduction" (23 chars) survive a naive cleaner.
-    band_text = Counter()
+    band_text = defaultdict(set)
     for ln in lines:
         if not (ln.y0 <= p.header_band or ln.y1 >= p.footer_band):
             continue
@@ -2624,15 +2621,16 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
         # never let an equation number "(4.7)" become a running-head pattern
         if not norm or re.fullmatch(r"\(#(\.#)*\)", norm):
             continue
-        band_text[norm] += 1
+        band_text[norm].add(ln.page)
     thresh = max(3, int(npages * 0.02))
-    p.running_heads = {t for t, c in band_text.items() if c >= thresh}
+    p.running_heads = {t for t, pages in band_text.items() if len(pages) >= thresh}
 
     # --- heading styles ----------------------------------------------------
     style_lines = defaultdict(list)
     for ln in lines:
         style_lines[ln.style].append(ln)
 
+    mark_isolation(lines, p)
     heading_candidates = []
     for style, ls in style_lines.items():
         font, size = style
@@ -2644,7 +2642,16 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
             continue                                    # one-off, not a style
         bold = sum(1 for l in body_ls if l.is_bold) / len(body_ls) > 0.5
         bigger = size > p.body_size + 0.6
-        if not (bold or bigger):
+        # Learn unusual heading styles from repeated typography and spacing.
+        distinct = style != (p.body_font, p.body_size)
+        examples = [l for l in body_ls if l.isolated and heading_text_ok(l.text)
+                    and not l.is_mono and l.math_ratio < 0.2
+                    and not CAPTION_RE.match(l.text)]
+        adaptive = (distinct and len(examples) >= 3
+                    and len(examples) / len(body_ls) >= 0.8
+                    and len({l.page for l in examples}) >= 2
+                    and size >= p.body_size * 0.95)
+        if not (bold or bigger or adaptive):
             continue
         if statistics.median([l.math_ratio for l in body_ls]) > 0.4:
             continue                                    # display math
@@ -2656,6 +2663,11 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
             continue                                    # bold emphasis run
         if len(body_ls) > max(40, npages * 1.5):
             continue                                    # too frequent (floor for papers)
+        if adaptive and not (bold or bigger):
+            p.adaptive_styles.add(style)
+            p.learning_evidence.append({"style": list(style),
+                "examples": len(examples), "pages": len({l.page for l in examples}),
+                "reason": "repeated short isolated lines in a distinct style"})
         heading_candidates.append((size, style))
 
     # Rank by size descending, clustering near-equal sizes into one level.
@@ -2787,7 +2799,7 @@ def mark_isolation(lines: list[Line], prof: Profile) -> None:
     pitches = []
     prev = None
     for ln in lines:
-        if prev is not None and ln.page == prev.page:
+        if prev is not None and ln.page == prev.page and ln.col == prev.col:
             gap = ln.y0 - prev.y0
             if 0 < gap < prof.page_h * 0.2:
                 pitches.append(gap)
@@ -2837,7 +2849,8 @@ def demote_dense_headings(lines: list[Line], window: int = 15, limit: int = 4) -
         if i > 0 and lines[i - 1].kind == "heading" and \
                 re.match(r"^(Part|Chapter)\s+[\dIVX]+$", lines[i - 1].text.strip(), re.I):
             continue
-        near = sum(1 for j in idx if abs(j - i) <= window)
+        near = sum(1 for j in idx if abs(j - i) <= window
+                   and lines[j].page == lines[i].page and lines[j].col == lines[i].col)
         if near > limit:
             lines[i].kind = "body"
             lines[i].level = 0
@@ -3286,7 +3299,8 @@ def classify(lines: list[Line], prof: Profile) -> None:
         lenient_ok = titled and letters >= 2 and letters / max(1, len(ln.text.strip())) >= 0.5
         if ln.style in prof.heading_styles and (heading_text_ok(ln.text) or lenient_ok) \
                 and (ln.math_ratio < 0.35 or lenient_ok) \
-                and (ln.isolated or continues or not prof.ocr_layer):
+                and (ln.isolated or continues or
+                     (not prof.ocr_layer and ln.style not in prof.adaptive_styles)):
             ln.kind = "heading"
             ln.level = prof.heading_styles[ln.style]
             # The authored contents page beats font-size ranking wherever the
@@ -3378,7 +3392,8 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
         cur = lines[i]
         if cur.kind == "heading" and i + 1 < len(lines):
             nxt = lines[i + 1]
-            same_row = (nxt.page == cur.page and abs(nxt.y0 - cur.y0) < 3.0
+            same_row = (nxt.page == cur.page and nxt.col == cur.col
+                        and abs(nxt.y0 - cur.y0) < 3.0
                         and nxt.kind == "heading")
             if same_row and NUM_HEADING_RE.match(cur.text.strip()):
                 cur.text = f"{cur.text.strip().rstrip('.')} {nxt.text.strip()}"
@@ -3392,8 +3407,9 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
                 i += 1
                 continue
             # "Chapter 2" on its own line, title on the next line below
-            stacked = (nxt.page == cur.page and 0 < nxt.y0 - cur.y0 < 70
-                       and nxt.kind == "heading")
+            stacked = (nxt.page == cur.page and nxt.col == cur.col
+                       and 0 < nxt.y0 - cur.y0 < 70 and nxt.kind == "heading"
+                       and nxt.style not in _PROF.adaptive_styles)
             if stacked and re.match(r"^(Chapter|Part|Appendix)\s+[\dIVX]+$",
                                     cur.text.strip(), re.I):
                 cur.text = f"{cur.text.strip()}: {nxt.text.strip()}"
@@ -3472,7 +3488,7 @@ def _absorb_wraps(lines: list[Line], i: int, head: Line) -> int:
     return i
 
 
-DEHYPH_RE = re.compile(r"([A-Za-z]{2,})-$")
+DEHYPH_RE = re.compile(r"([^\W\d_]{2,}(?:-[^\W\d_]+)*)-$")
 SENT_END = tuple(".!?:;\u201d\u2019\")]}")
 
 
@@ -3489,7 +3505,14 @@ def looks_continued(prev: str, nxt: str) -> bool:
     return nxt[0].islower() or nxt[0].isdigit() or not nxt[0].isalpha()
 
 
-def reflow(paragraph_lines: list[str]) -> str:
+def learn_word_forms(lines: list[Line]) -> set[str]:
+    """Document-local spelling evidence; do not train on code or formulas."""
+    return {m.group().casefold() for line in lines
+            if line.kind in ("body", "heading", "caption") and line.math_ratio < 0.2
+            for m in re.finditer(r"[^\W\d_]+(?:-[^\W\d_]+)*", line.text)}
+
+
+def reflow(paragraph_lines: list[str], word_forms: set[str] | None = None) -> str:
     buf = ""
     for raw in paragraph_lines:
         cur = raw.strip()
@@ -3498,7 +3521,14 @@ def reflow(paragraph_lines: list[str]) -> str:
             continue
         m = DEHYPH_RE.search(buf)
         if m and cur and cur[0].islower():
-            buf = buf[: m.start()] + m.group(1) + cur      # de-hyphenate
+            # Preserve compounds witnessed elsewhere in this document, e.g.
+            # "self-supervised". Otherwise retain the historical dehyphenation.
+            next_word = re.match(r"[^\W\d_]+(?:-[^\W\d_]+)*", cur)
+            compound = (m.group(1) + "-" + next_word.group()).casefold() if next_word else ""
+            if word_forms and compound in word_forms:
+                buf += cur
+            else:
+                buf = buf[:m.start()] + m.group(1) + cur
         else:
             buf = buf + " " + cur
     return re.sub(r"\s+", " ", buf).strip()
@@ -3520,6 +3550,7 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
 
     out: list[str] = []
     toc: list[tuple[int, str]] = []
+    word_forms = learn_word_forms(lines)
     para: list[str] = []
     code: list[str] = []
     prev: Line | None = None
@@ -3527,7 +3558,7 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
     def flush_para():
         nonlocal para
         if para:
-            out.append(reflow(para))
+            out.append(reflow(para, word_forms))
             out.append("")
             para = []
 
@@ -4120,6 +4151,8 @@ def print_profile(prof: Profile, lines: list[Line]) -> None:
     for style, lvl in sorted(prof.heading_styles.items(), key=lambda kv: kv[1]):
         n = sum(1 for l in lines if l.style == style)
         print(f"      H{lvl}  {style[0]:<12} {style[1]:>5}pt   ({n} lines)")
+    for evidence in prof.learning_evidence:
+        print(f"  learned heading    {evidence}")
     print(f"  caption styles     {sorted(prof.caption_styles)}")
     print(f"  dense demotions    {prof.demoted_dense}")
     print(f"  index entries      {prof.index_entries}")
@@ -4189,6 +4222,9 @@ def write_artifacts(dir_: Path, doc, lines: list[Line], prof: Profile, pages) ->
         "ocr_layer": prof.ocr_layer, "page_w": prof.page_w, "page_h": prof.page_h,
         "heading_styles": {f"{k[0]}@{k[1]}": v for k, v in prof.heading_styles.items()},
         "running_heads": sorted(prof.running_heads),
+        "learning_evidence": prof.learning_evidence,
+        "page_columns": {str(p + 1): sorted({l.col for l in lines if l.page == p and l.col >= 0})
+                         for p in pages},
         "toc_pages": sorted(prof.toc_pages), "acronyms": sorted(prof.acronyms),
         "canonical_title": prof.canonical_title,
     }
