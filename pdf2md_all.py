@@ -162,14 +162,26 @@ def assign_regimes(lines, prof) -> Counter:
                     l.kind = "quote"
             continue
         n_keys = len(COPYRIGHT_KEYS.findall(txt))
-        if n_keys >= 3 or ("isbn" in low and n_keys >= 2):
+        # A copyright page is a short page. Without that, an *article about
+        # copyright* trips the keyword count and two 11,800-character pages of
+        # its prose are dropped as boilerplate -- the exact silent-content-loss
+        # failure this converter exists to avoid.
+        if chars < 3000 and (n_keys >= 3 or ("isbn" in low and n_keys >= 2)):
             for l in pl:
                 l.regime = "copyright"
                 l.kind = "copyright_keep" if COPYRIGHT_KEEP.search(l.text) \
                     and len(l.text) < 140 else "copyright_drop"
             continue
-        if chars < 220 and len(pl) <= 5 and not big and \
-                (DEDICATION_RE.match(pl[0].text.strip()) or len(pl) <= 3):
+        # A dedication is set in display type as often as not -- that is the
+        # convention, not the exception -- so requiring small type to call a
+        # page a dedication had it fall through to the title-page test
+        # instead, and 'For Damian Kelly and Rebecca, Rudolph, Abigail and
+        # Leah Heitbaum...' was published as the book's title. Where the page
+        # opens with the words a dedication opens with, size is not evidence
+        # against it; where it does not, the old shape test still applies.
+        if chars < 220 and len(pl) <= 5 and \
+                (DEDICATION_RE.match(pl[0].text.strip())
+                 or (not big and len(pl) <= 3)):
             for l in pl:
                 l.regime, l.kind = "dedication", "dedication"
             continue
@@ -777,7 +789,10 @@ A paper differs from a book in ways that break every book assumption:
 
 ARXIV_RE = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?", re.I)
 ABSTRACT_RE = re.compile(r"^\s*abstract\s*[.:—\-]?\s*$", re.I)
-ABSTRACT_INLINE_RE = re.compile(r"^\s*abstract\s*[.:—\-]\s+(\S.*)$", re.I)
+# 'Abstract. The paper...' and, the IEEE way, 'Abstract—Extending...' with no
+# space after the dash at all -- which read as an ordinary paragraph, so the
+# abstract went unlabelled and the whole of it was promoted to a heading.
+ABSTRACT_INLINE_RE = re.compile(r"^\s*abstract\s*(?:[.:]\s+|[—–]\s*)(\S.*)$", re.I)
 EMAIL_RE = re.compile(r"[\w.\-+]+@[\w.\-]+\.\w+|\{[\w., \-]+\}@[\w.\-]+")
 AFFIL_RE = re.compile(r"\b(University|Institute|Department|Dept\.?|Laboratory|Lab\b|"
                       r"College|School of|Research|Center|Centre|Google|Microsoft|"
@@ -792,6 +807,43 @@ VENUE_RE = re.compile(r"(Proceedings of|Conference on|Workshop on|Journal of|"
                       r"ICCV|ECCV|AAAI|IJCAI|KDD|SIGIR|arXiv preprint)", re.I)
 SUPERSCRIPT_MARKS = re.compile(r"[\u2020\u2021\u00a7\u00b6*\u2217\u2660-\u2667\u00b9\u00b2\u00b3"
                                r"\u2070-\u2079\u0e8e\x8e\x8f]+")
+# ACM front matter: the section labels that sit in the title block of a CHI or
+# CSCW paper, and everything they introduce, none of which is an author or an
+# affiliation. General Terms draws on a closed vocabulary, so it can be listed.
+# REVTeX stamps '(Dated: September 16, 2026)' under the author block. It is
+# the submission date, not where anybody works.
+DATELINE_RE = re.compile(
+    r"^\(?\s*(dated|submitted|received|revised|accepted|version|draft)\s*[:.]", re.I)
+ACM_GENERAL_TERM = (r"design|human factors|experimentation|measurement|performance|"
+                    r"reliability|security|standardization|theory|verification|"
+                    r"algorithms|documentation|economics|languages|legal aspects|"
+                    r"management")
+ACM_FRONT_RE = re.compile(
+    r"^\s*(?:(?:author |index )?keywords|acm classification|general terms|"
+    r"categories and subject descriptors|copyright is held|"
+    r"permission to make digital|[A-K]\d?\.\d"
+    rf"|(?:{ACM_GENERAL_TERM})(?:\s*[,;]\s*(?:{ACM_GENERAL_TERM}))*\s*[.;]?\s*$)",
+    re.I)
+
+
+def is_affiliation(text: str) -> bool:
+    """Is this title-block line where the authors work?
+
+    The title block of an ACM extended abstract holds far more than names and
+    institutions: author keywords, ACM classification codes, general terms,
+    the copyright notice, and -- when the sidebar layout defeats the column
+    split -- sentences of the abstract itself. Taking every unrecognised line
+    as an affiliation put all of that in the YAML, on 13% of the papers in a
+    1,566-book corpus. An affiliation names an institution or a place, or is
+    short enough to be one this code has never heard of ('RWTH Aachen');
+    anything longer that names neither is prose that has drifted in.
+    """
+    t = text.strip()
+    if not t or ACM_FRONT_RE.match(t) or KEYWORDS_RE.match(t) or DATELINE_RE.match(t):
+        return False
+    if AFFIL_RE.search(t) or PLACE_RE.search(t):
+        return True
+    return len(t) <= 45 and not t.endswith((".", ";"))
 
 
 # ---------------------------------------------------------------------------
@@ -830,6 +882,13 @@ def _column_template(body_all, page_w):
             if merged and b - merged[-1] <= 25:
                 continue
             merged.append(b)
+        # Anchoring on merged[0], and measuring a column's right edge from
+        # every line that starts in it, both misread some two-column pages --
+        # see "Known gaps". Two targeted repairs (anchor on whichever start
+        # matches the page's left margin; ignore lines that cross the gutter
+        # when measuring the edge) were tried and measured over the 376-file
+        # library: they fixed a handful of pages and made more documents
+        # worse, so they are not here.
         if merged and abs(merged[0] - doc_left) <= 12:
             merged[0] = doc_left
             # a start must lie beyond the previous column's right edge
@@ -838,7 +897,8 @@ def _column_template(body_all, page_w):
                 if kept and st < edges[-1] - 10:
                     continue
                 later = [s2 for s2 in merged if s2 > st + 40]
-                col_lines = [l for l in narrow_all if st - 8 <= l.x0 < (later[0] - 20 if later else page_w)]
+                col_lines = [l for l in narrow_all
+                             if st - 8 <= l.x0 < (later[0] - 20 if later else page_w)]
                 x1s = sorted(l.x1 for l in col_lines)
                 if len(x1s) < 3:
                     continue
@@ -904,7 +964,13 @@ def reorder_columns(lines, page_w: float | dict[int, float]) -> int:
                 order.extend(band)
                 continue
             for k in range(len(cols)):
-                order.extend(sorted((l for l in band if l.col == k), key=lambda l: (l.y0, l.x0)))
+                # Band the baseline exactly as the extractor does. LaTeX emits
+                # a section number and its title as two blocks on one
+                # baseline, a hair apart in y; ordering on raw y0 puts
+                # 'Repeated Sampling and Output Variabil-' ahead of its own
+                # '4.1', and the merge that rejoins them never fires.
+                order.extend(sorted((l for l in band if l.col == k),
+                                    key=lambda l: (round(l.y0 / 3.0), l.x0)))
     lines[:] = order
     return multi_pages
 
@@ -947,6 +1013,8 @@ def label_paper_front(lines, prof) -> dict:
     rest = [l for l in head if l.kind != "paper_title"]
     for l in rest:
         t = l.text.strip()
+        if ACM_FRONT_RE.match(t):       # a section label, not a person or a place
+            continue
         if EMAIL_RE.search(t) and len(EMAIL_RE.sub("", t).strip()) < 6:
             l.kind = "paper_email"; meta["emails"].append(t)
         elif AFFIL_RE.search(t) and not re.search(r"\b(and)\b", t):
@@ -962,7 +1030,7 @@ def label_paper_front(lines, prof) -> dict:
                         and part[0].isupper() and not AFFIL_RE.search(part) \
                         and not PLACE_RE.search(part):
                     meta["authors"].append(part)
-        else:
+        elif is_affiliation(t):
             l.kind = "paper_affil"; meta["affiliations"].append(t)
     if abs_idx is not None:
         a = p1[abs_idx]
@@ -1018,6 +1086,19 @@ def promote_paper_headings(lines, prof) -> int:
         if not (at_margin and short and (l.is_bold or l.size > prof.body_size + 0.4
                                           or l.isolated)):
             continue
+        # A heading has air above it. IEEE sets the abstract in bold at the
+        # full-column margin, so every wrapped line of it passed the tests
+        # above and the abstract came out as a stack of H1s -- but each of
+        # those lines sits one pitch under the last, in the same face, which
+        # is what being inside a paragraph looks like.
+        prev = lines[i - 1] if i else None
+        if prev is not None and prev.kind == "body" and prev.page == l.page \
+                and getattr(prev, "col", 0) == getattr(l, "col", 0):
+            pitch = max(l.size, getattr(prof, "line_pitch", 0) or l.size)
+            if 0 <= l.y0 - prev.y0 <= pitch * 1.6 and prev.style == l.style:
+                continue
+            if looks_continued(prev.text, t):
+                continue
         m = PAPER_HEAD_RE.match(t)
         if m:
             num = m.group(1)
@@ -1027,7 +1108,89 @@ def promote_paper_headings(lines, prof) -> int:
         elif UNNUMBERED_HEADS.match(t) and (l.is_bold or l.size > prof.body_size + 0.4 or l.isolated):
             l.kind, l.level = "heading", 1
             n += 1
-    return n
+    return n + promote_roman_sections(lines, prof)
+
+
+ROMAN_HEAD_RE = re.compile(r"^(M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})"
+                           r"(?:IX|IV|V?I{0,3}))\.\s+(\S.{2,78})$")
+LETTER_HEAD_RE = re.compile(r"^([A-Z])\.\s+(\S.{2,78})$")
+ROMAN_BARE_RE = re.compile(r"^(M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})"
+                           r"(?:IX|IV|V?I{0,3}))\.$")
+_ROMAN_VALUE = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+
+
+def roman_value(s: str) -> int:
+    """'IV' -> 4. Zero for anything that is not a roman numeral."""
+    total, prev = 0, 0
+    for ch in reversed(s.upper()):
+        v = _ROMAN_VALUE.get(ch, 0)
+        if not v:
+            return 0
+        total += -v if v < prev else v
+        prev = max(prev, v)
+    return total
+
+
+def promote_roman_sections(lines, prof) -> int:
+    """'I. INTRODUCTION', the way REVTeX and IEEE set a section heading.
+
+    These are centred, and set in the body face at the body size -- there is
+    no style to rank and no margin to measure against, so every other test in
+    this file is blind to them. On a sample of 50 arXiv papers, five of the
+    six written this way lost *every* section heading in the document.
+
+    What is left is the numbering itself, and it is strong evidence: a run of
+    short isolated lines numbered I, II, III in order is a section spine and
+    nothing else. Three members are required, counting from the first, so a
+    stray 'V. Smith' in a bibliography cannot start one. Once the spine is
+    known, 'A. Method' between two of its members is a subsection under it.
+    """
+    spine, folded = [], []
+    for i, l in enumerate(lines):
+        if l.kind not in ("body", "heading"):
+            continue
+        t = l.text.strip()
+        m = ROMAN_HEAD_RE.match(t)
+        if m and not t.endswith((".", ",", ";", ":")):
+            v = roman_value(m.group(1))
+            if v and (l.isolated or m.group(2).upper() == m.group(2)):
+                spine.append((v, l, None))
+            continue
+        # REVTeX also sets the number on a line of its own with the title
+        # under it -- 'V.' then 'CONCLUSION' -- which left a bare 'V.'
+        # stranded above the heading.
+        bare = ROMAN_BARE_RE.match(t)
+        if bare and i + 1 < len(lines):
+            nxt = lines[i + 1]
+            head = nxt.text.strip()
+            v = roman_value(bare.group(1))
+            if v and nxt.page == l.page and 2 < len(head) <= 80 \
+                    and not head.endswith((".", ",", ";", ":")) \
+                    and (head.upper() == head or nxt.kind == "heading"):
+                spine.append((v, l, nxt))
+    # the longest ascending run I, II, III ... from the front
+    run, want = [], 1
+    for v, l, tail in spine:
+        if v == want:
+            run.append((l, tail))
+            want += 1
+    if len(run) < 3:
+        return 0
+    for l, tail in run:
+        if tail is not None:                # 'V.' + 'CONCLUSION' on two lines
+            l.text = f"{l.text.strip()} {tail.text.strip()}"
+            l.y1, tail.kind, tail.in_toc = tail.y1, "consumed", False
+        l.kind, l.level, l.in_toc = "heading", 1, True
+    run = [l for l, _ in run]
+    # letter subsections sit under the spine, not beside it
+    first, last = run[0], run[-1]
+    for l in lines:
+        if l.kind != "heading" or l.level != 1 or l in run:
+            continue
+        if (first.page, first.y0) <= (l.page, l.y0) <= (last.page, last.y0) \
+                and LETTER_HEAD_RE.match(l.text.strip()):
+            l.level = 2
+    return len(run)
 
 
 # =============================================================================
@@ -1270,11 +1433,24 @@ def label_deck(lines, prof) -> dict:
     # the title style can dominate character count.
     title_sizes = [max(l.size for l in pl) for pl in by_page.values() if len(pl) >= 4]
     ref = statistics.median(title_sizes) if title_sizes else prof.body_size * 1.5
+    titles: dict[int, object] = {}
     for page in sorted(by_page):
         pl = sorted(by_page[page], key=lambda l: (l.y0, l.x0))
         if not pl:
             continue
         big = max(pl, key=lambda l: l.size)
+        wrapped = take_wrapped_title(pl, big)
+        if wrapped:
+            big.text = " ".join([big.text.strip()] + [l.text.strip() for l in wrapped])
+            for l in wrapped:
+                l.kind = "consumed"
+            pl = [l for l in pl if l not in wrapped]
+            by_page[page] = pl
+        # The slide's largest line is its title even when the deck bullets its
+        # titles; the bullet is decoration and has no place in a heading, or
+        # in the anchor generated from one.
+        big.text = DK_BULLET_RE.sub("", big.text.strip(), count=1)
+        titles[page] = big
         display = [l for l in pl if l.size >= big.size - 1.5]
         # ---- title slide / section divider: few lines, all display-sized
         if len(pl) <= 3 and len(display) >= 1 and big.size >= ref * 0.9:
@@ -1317,7 +1493,104 @@ def label_deck(lines, prof) -> dict:
                 if l.kind == "list_item" and l.x0 > base + 12:
                     l.level = 2
         pl[-1].slide_end = True
+    collapse_build_slides(by_page, titles)
     return meta
+
+
+def _slide_key(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def take_wrapped_title(pl, big) -> list:
+    """The rest of a slide title that ran onto a second and third line.
+
+    A long title wraps, and every line after the first reads as a separate
+    line of its own, so 'Specific: The Prioritization Exercise' arrives as a
+    heading 'Specific: The' followed by two one-word bullets. On a deck whose
+    body text is set at the title's own size -- common, and the reason size
+    alone cannot decide this -- the giveaway is geometry: the continuation
+    starts at the title's left edge, on the title's own line pitch, and the
+    body below it starts after a visibly bigger gap.
+    """
+    if not pl or pl[0] is not big:          # a title sits at the top of its slide
+        return []
+    run, pitch = [], None
+    for l in pl[1:]:
+        if abs(l.size - big.size) > 0.6 or abs(l.x0 - big.x0) > 2.5:
+            break
+        gap = l.y0 - (run[-1] if run else big).y0
+        if gap <= 0 or (pitch is not None and gap > pitch * 1.55):
+            break
+        if pitch is None:
+            if gap > big.size * 1.8:        # already a paragraph break
+                break
+            pitch = gap
+        run.append(l)
+        if len(" ".join(x.text for x in run)) > 120:   # a title, not a paragraph
+            return []
+    # the body below has to be separated from the title by more than the pitch
+    if not run or len(run) >= len(pl) - 1:
+        return []
+    nxt = pl[len(run) + 1]
+    return run if nxt.y0 - run[-1].y0 > pitch * 1.55 else []
+
+
+def collapse_build_slides(by_page, titles) -> int:
+    """Fold a PowerPoint/Keynote animation build back into one slide.
+
+    A slide whose bullets appear one click at a time exports as one PDF page
+    per click. Read as a deck that is four slides titled 'Executives', the
+    last carrying all three bullets and the first carrying none -- so the
+    Markdown repeats the heading four times and the first bullet three.
+    Across a 1,566-book library this was the single largest source of
+    duplicated headings.
+
+    Each consecutive pair sharing a title is compared, and whichever page the
+    other already contains is dropped -- either direction, because a build
+    can take an overlay away again as well as add one. Containment is tested
+    two ways, since revealing a bullet re-wraps the lines above it: as a set
+    of lines, or as a prefix of the slide's text run together. A pair where
+    neither contains the other is two real slides that happen to share a
+    title, and both are kept. The survivor inherits the stronger heading
+    level, so a section divider ahead of its own content slide does not lose
+    the section.
+    """
+    def contains(outer: int, inner: int) -> bool:
+        """Does page `outer` already say everything page `inner` does?"""
+        def body(p):
+            return [l for l in by_page[p] if l is not titles[p]]
+        if {_slide_key(l.text) for l in body(inner)} <= \
+                {_slide_key(l.text) for l in body(outer)}:
+            return True
+        return _slide_key(" ".join(l.text for l in body(outer))).startswith(
+               _slide_key(" ".join(l.text for l in body(inner))))
+
+    def droppable(p: int) -> bool:
+        return p != 0 and titles[p].kind != "deck_title"
+
+    order = [p for p in sorted(by_page) if titles.get(p) is not None]
+    collapsed = 0
+    held = order[0] if order else None
+    for cur in order[1:]:
+        if _slide_key(titles[held].text) != _slide_key(titles[cur].text):
+            held = cur
+            continue
+        if contains(cur, held) and droppable(held):
+            loser, winner = held, cur
+        elif contains(held, cur) and droppable(cur):
+            loser, winner = cur, held
+        else:
+            held = cur
+            continue
+        keep, gone = titles[winner], titles[loser]
+        if keep.kind == "heading" and gone.kind == "heading":
+            keep.level = min(keep.level, gone.level)
+            keep.in_toc = keep.in_toc or gone.in_toc
+        for l in by_page[loser]:
+            l.kind, l.in_toc, l.slide_end = "consumed", False, False
+        collapsed += 1
+        held = winner
+    return collapsed
 
 
 # =============================================================================
@@ -2241,12 +2514,28 @@ PREFIX_ACCENT_RE = re.compile(
 SEQUENCE_FIXES = [
     (re.compile(r"c\u20dd|\(c\)(?=\s*\d{4})"), "\u00a9"),   # c⃝2018 / (c) 2018 -> ©
     (re.compile(r"7!"), "\u21a6"),          # 7! -> ↦  (mapsto)
-    (re.compile(r"(?<=\w)\u00ad(?=\w)"), ""),  # soft hyphen inside a word
+    # Soft hyphen inside a word. The glyph has width, so the gap it leaves
+    # makes the span joiner insert a space after it -- 'How\u00ad ever',
+    # 'illus\u00ad trates'. One 12-page paper carried 183 of these. The
+    # character means "the word continues", so the space goes with it.
+    (re.compile(r"(?<=\w)\u00ad\s*(?=\w)"), ""),
 ]
 
+# A figure exported from Inkscape keeps the LaTeX source of its labels in an
+# invisible <latexit> annotation, base64-encoded. None of it is drawn on the
+# page, all of it is in the text layer, and it lands in the Markdown as a
+# code block of gibberish with the real label welded onto the end.
+LATEXIT_RE = re.compile(r"<latexit[^>]*>|^.*?</latexit>")
+BASE64_LINE_RE = re.compile(r"^[A-Za-z0-9+/]{40,}={0,2}$")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f-\x9f]")
 ODD_SPACE_RE = re.compile(r"[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")
 ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200d\ufeff]")
+# Wingdings, Symbol and a publisher's own dingbat font have no Unicode
+# meaning, so they are encoded into the Private Use Area -- a bullet, a
+# numbered callout, a press logo, all of them tofu in a text editor. One book
+# carried 7,266 of them into its Markdown, including inside headings and the
+# anchors generated from them.
+PRIVATE_USE_RE = re.compile(r"[\ue000-\uf8ff]")
 
 
 def font_class(font_name: str) -> str:
@@ -2301,6 +2590,15 @@ def repair_span(text: str, font_name: str) -> str:
     s = CONTROL_RE.sub("", s)
     s = ZERO_WIDTH_RE.sub("", s)
     s = ODD_SPACE_RE.sub(" ", s)
+    # A private-use glyph that leads the line is the line's bullet, and
+    # becomes a real one so the list detector can see it; the rest are
+    # dropped, because printing a glyph whose meaning the PDF never recorded
+    # helps nobody.
+    lead = len(s) - len(s.lstrip())
+    if PRIVATE_USE_RE.match(s, lead):
+        s = s[:lead] + "•" + PRIVATE_USE_RE.sub("", s[lead + 1:])
+    else:
+        s = PRIVATE_USE_RE.sub("", s)
     return s
 
 
@@ -2311,6 +2609,16 @@ def repair_line(text: str) -> str:
     text = PREFIX_ACCENT_RE.sub(_accent, text)
     for pat, rep in SEQUENCE_FIXES:
         text = pat.sub(rep, text)
+    # A tab, or a run of spaces, inside a line is the PDF's own layout
+    # spacing, not meaning: '3.2.\t Critical Design' renders as a ragged
+    # heading and carries the tab into the anchor generated from it. Leading
+    # whitespace is left alone, because a code block's indent is real.
+    indent = re.match(r"[ \t]*", text).group()
+    text = indent + re.sub(r"[ \t]+", " ", text[len(indent):])
+    if "latexit" in text:
+        text = LATEXIT_RE.sub("", text, count=1).strip()
+    if BASE64_LINE_RE.match(text.strip()):
+        return ""                       # the rest of the same annotation
     return unicodedata.normalize("NFC", text)
 
 
@@ -2406,13 +2714,34 @@ def extract_lines(doc, page_range) -> list[Line]:
     for pno in page_range:
         page = doc[pno]
         d = page.get_text("dict")
+        # get_text() reports each line's "dir" and "bbox" in *unrotated* page
+        # space, while page.rect -- the page as a reader sees it, and the frame
+        # every later stage measures against -- is the rotated one. On a page
+        # carrying /Rotate 90 or /Rotate 270 the two disagree by a quarter
+        # turn: body text reads as dir (0,-1), so the sideways-text check below
+        # would discard the whole page, and y0 no longer runs down the page, so
+        # reading order comes out scrambled. page.rotation_matrix maps one
+        # space to the other, and is the identity when the page is upright.
+        spin = page.rotation_matrix
+        # dir is a direction, not a point: drop the matrix's translation.
+        spin_dir = pymupdf.Matrix(spin.a, spin.b, spin.c, spin.d, 0, 0)
+        spun = page.rotation % 360 != 0
+
+        def to_page(box):
+            """A span or line box, in the frame page.rect describes."""
+            if not spun:
+                return box
+            r = pymupdf.Rect(box) * spin
+            r.normalize()
+            return (r.x0, r.y0, r.x1, r.y1)
+
         for block in d["blocks"]:
             if block["type"] != 0:
                 continue
             for ln in block["lines"]:
                 # rotated text (the sideways arXiv identifier on page 1,
                 # vertical figure axis labels) is never prose
-                dx, dy = ln.get("dir", (1, 0))
+                dx, dy = pymupdf.Point(*ln.get("dir", (1, 0))) * spin_dir
                 if abs(dy) > 0.3:
                     ROTATED_TEXT.append("".join(s["text"] for s in ln["spans"]))
                     continue
@@ -2424,18 +2753,19 @@ def extract_lines(doc, page_range) -> list[Line]:
                 for s in spans:
                     base = s["font"].split("+")[-1]
                     fonts.append(base)
+                    sbox = to_page(s["bbox"])
                     txt = repair_span(s["text"], s["font"])
                     # TeX writes each font run as its own span with no space
                     # character between them, so a naive "".join() welds words
                     # together ("First-visitMCprediction"). Reinstate the space
                     # from the geometric gap between span boxes.
                     if prev_x1 is not None:
-                        gap = s["bbox"][0] - prev_x1
+                        gap = sbox[0] - prev_x1
                         if gap > s["size"] * 0.18 and pieces and \
                                 not pieces[-1].endswith(" ") and \
                                 not txt.startswith(" "):
                             pieces.append(" ")
-                    prev_x1 = s["bbox"][2]
+                    prev_x1 = sbox[2]
                     pieces.append(txt)
                     n = len(txt.strip())
                     total_chars += n
@@ -2450,7 +2780,7 @@ def extract_lines(doc, page_range) -> list[Line]:
                     weight[s["font"].split("+")[-1]] += len(s["text"].strip())
                 dom = weight.most_common(1)[0][0]
                 size = max(s["size"] for s in spans)
-                x0, y0, x1, y1 = ln["bbox"]
+                x0, y0, x1, y1 = to_page(ln["bbox"])
                 lines.append(Line(
                     page=pno, text=text, x0=x0, y0=y0, x1=x1, y1=y1,
                     size=size, fonts=tuple(sorted(set(fonts))),
@@ -2469,6 +2799,56 @@ def extract_lines(doc, page_range) -> list[Line]:
     if page_w:
         PP.reorder_columns(lines, {p: doc[p].rect.width for p in page_range})
     return lines
+
+
+ASCII_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+VOWEL_RE = re.compile(r"[aeiouyAEIOUY]")
+
+
+def broken_text_layer(lines) -> tuple[float, str] | None:
+    """(severity, what is wrong), or None when the text extracts fine.
+
+    A PDF whose fonts are subset with a custom encoding and no ToUnicode map
+    extracts as a substitution cipher: 'Farming management' comes back as
+    ')DUPLQJ PDQDJHPHQW'. Nothing downstream can tell -- the line count, the
+    font metrics and the layout are all exactly as healthy as a good
+    document's -- so pdf2md will otherwise emit 300kB of confident gibberish
+    and say nothing. Three cheap tells, because the breakages look different:
+
+      letters    a cipher into the punctuation range leaves text that is
+                 barely letters at all
+      vowels     real words have them, a cipher's output mostly does not
+      run-ons    some encodings map the space to an unmapped code, which
+                 drops out and welds a whole line into one 200-char 'word'
+
+    The last two need ASCII words to count, so they run only on
+    predominantly-Latin documents; a Japanese or Korean page has too few to
+    score meaningfully. Every threshold sits in open space: across a
+    1,566-book corpus the worst *honest* document scores 0.54 letters, 0.08
+    vowel-less and 0.017 run-on, while the genuinely broken ones score
+    0.07-0.08, 0.23-0.44 and 0.13-0.30 respectively. Documents that garble
+    into the *accented-letter* range still read as letters and words, and
+    this does not catch them.
+    """
+    text = "\n".join(l.text for l in lines)
+    if len(text) < 2000:
+        return None
+    alpha = sum(c.isalpha() for c in text) / len(text)
+    if alpha < 0.30:
+        return 1 - alpha, "is not letters at all"
+    if sum(c.isascii() and c.isalpha() for c in text) < 0.4 * len(text):
+        return None
+    words = ASCII_WORD_RE.findall(text)
+    if len(words) < 300:
+        return None
+    vowelless = sum(1 for w in words if not VOWEL_RE.search(w)) / len(words)
+    if vowelless > 0.15:
+        return vowelless, "decodes to nonsense"
+    letters = sum(len(w) for w in words)
+    runon = sum(len(w) for w in words if len(w) > 24) / max(1, letters)
+    if runon > 0.06:
+        return runon, "has run together with the spaces missing"
+    return None
 
 
 def font_family(name: str) -> str:
@@ -2821,6 +3201,33 @@ BACK_MATTER_RE = re.compile(
     r"Glossary|Notes|Endnotes|Acknowledg(e)?ments|About the Authors?)$", re.I)
 INDEX_ENTRY_RE = re.compile(r"^[a-z(].{2,}|^.{2,60},\s+[A-Z(]")
 
+
+
+def pick_title_page(pages: dict, body_size: float, title_of) -> str:
+    """Which of the front matter's display-set pages is the title page?
+
+    `pages` maps a page number to the title_line Lines found on it, and
+    `title_of` renders one page's lines into a title.
+
+    Not the longest page: that published a dedication ('To Karen, Paul, Anna,
+    and Jack -- Michael T. Goodrich To Isabel...') and an "other books by this
+    author" list as the titles of their books. Not the largest type either:
+    the half-title is set bigger than the title page it faces -- 51pt against
+    21pt in one book -- and one book opens on a printer's ornament at 93pt, so
+    that picks a single word, or a single glyph, and loses every subtitle with
+    it ('Commensality', not 'Commensality From Everyday Food to Feast').
+
+    Size is the right test for *whether* a page is a title page: it has to be
+    display-set against this document's own body size, which is what separates
+    it from a 12pt dedication or a 10pt backlist. Among the pages that pass,
+    the title page proper is the one carrying the most of the title block --
+    the half-title is one line, the title page is several.
+    """
+    if not pages:
+        return ""
+    display = {p: v for p, v in pages.items()
+               if max(l.size for l in v) >= body_size * 1.5} or pages
+    return title_of(max(display.values(), key=lambda v: (len(v), len(title_of(v)))))
 
 
 def demote_dense_headings(lines: list[Line], window: int = 15, limit: int = 4) -> int:
@@ -3326,8 +3733,13 @@ def classify(lines: list[Line], prof: Profile) -> None:
         ln.kind = "body"
 
     fold_caption_wraps(lines, prof)
-    if prof.doc_type == "book":
+    if prof.doc_type in ("book", "paper"):
+        # Papers need this as much as books do: IEEE sets the abstract in a
+        # bold face of its own, the style ranking learns that face as a
+        # heading style, and the whole abstract comes out as a stack of H1s.
+        # Ten heading candidates in ten consecutive lines is a paragraph.
         prof.demoted_dense = demote_dense_headings(lines)
+    if prof.doc_type == "book":
         prof.index_entries = mark_index_regime(lines, prof)
     prof.tables = mark_tables(lines, prof)          # tables claim cells first
     prof.figure_regions = mark_figure_text(lines, prof)
@@ -3349,16 +3761,16 @@ def classify(lines: list[Line], prof: Profile) -> None:
     pages = {}
     for l in lines:
         if l.kind == "title_line":
-            pages.setdefault(l.page, []).append(l.text.strip())
+            pages.setdefault(l.page, []).append(l)
     META_LINE = re.compile(r"(edition|press|publish|university|©|\bby\b|volume)", re.I)
     def _title_of(v):
         keep = []
-        for t in v:
-            if META_LINE.search(t):
+        for l in v:
+            if META_LINE.search(l.text):
                 break
-            keep.append(t)
+            keep.append(l.text.strip())
         return " ".join(keep)
-    best = max((_title_of(v) for v in pages.values()), key=len, default="")
+    best = pick_title_page(pages, prof.body_size, _title_of)
     if prof.doc_type == "paper" and prof.paper_meta.get("title"):
         best = prof.paper_meta["title"]
     elif prof.doc_type == "deck" and prof.deck_meta.get("title"):
@@ -3398,7 +3810,13 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
             if same_row and NUM_HEADING_RE.match(cur.text.strip()):
                 cur.text = f"{cur.text.strip().rstrip('.')} {nxt.text.strip()}"
                 cur.level = min(cur.level, nxt.level)
-                out.append(cur); i += 2; continue
+                cur.y1 = max(cur.y1, nxt.y1)
+                cur.style = nxt.style      # so wrapped title lines match
+                out.append(cur); i += 2
+                # a numbered heading wraps like any other: '4.1 Repeated
+                # Sampling and Output Variabil-' / 'ity'
+                i = _absorb_wraps(lines, i, out[-1])
+                continue
             if same_row and nxt.style == cur.style and nxt.x0 > cur.x1 - 2:
                 # a labelled heading set as two spans: "Example 6.2" | "Random Walk"
                 cur.text = f"{cur.text.strip()} {nxt.text.strip()}"
@@ -3457,6 +3875,7 @@ def assign_toc_groups(lines: list[Line]) -> list[Line]:
 
 _PITCH = 12.0   # set from Profile.line_pitch before assembly
 _PROF = None    # set before assembly
+_WORD_FORMS: set = set()   # this document's own spellings, for de-hyphenation
 
 
 DANGLING_RE = re.compile(r"\b(of|the|a|an|and|or|for|to|in|on|with|from|at|by)$", re.I)
@@ -3484,6 +3903,20 @@ def _absorb_wraps(lines: list[Line], i: int, head: Line) -> int:
             head.page = nxt.page
             i += 1
             continue
+        # A heading never ends mid-word. When it does, the tail of the word is
+        # on the next line, set as body and short enough to be nothing else
+        # ('...and Output Variabil-' / 'ity'), and classification had no reason
+        # to call so small a fragment a heading. Rejoin it the way a wrapped
+        # paragraph is rejoined, so the document's own spelling of a compound
+        # survives.
+        if (same_page and nxt.kind != "heading"
+                and DEHYPH_RE.search(head.text.rstrip())
+                and len(nxt.text.split()) <= 3
+                and nxt.text.lstrip()[:1].islower()):
+            head.text = reflow([head.text, nxt.text], _WORD_FORMS)
+            head.y1 = nxt.y1
+            i += 1
+            continue
         break
     return i
 
@@ -3496,7 +3929,7 @@ def looks_continued(prev: str, nxt: str) -> bool:
     prev, nxt = prev.rstrip(), nxt.lstrip()
     if not prev or not nxt:
         return False
-    if prev.endswith("-"):
+    if prev.endswith(("-", "­")):
         return True
     if prev[-1] in SENT_END:
         return False
@@ -3518,6 +3951,14 @@ def reflow(paragraph_lines: list[str], word_forms: set[str] | None = None) -> st
         cur = raw.strip()
         if not buf:
             buf = cur
+            continue
+        # A soft hyphen ending the line is a *discretionary* hyphen: the
+        # typesetter broke the word here and the character is invisible by
+        # definition, so the two halves rejoin with nothing between them.
+        # Without this the reflow reads 'How­ ever', 'illus­
+        # trates' -- 183 times in one 12-page paper.
+        if buf.endswith("­"):
+            buf = buf[:-1] + cur
             continue
         m = DEHYPH_RE.search(buf)
         if m and cur and cur[0].islower():
@@ -3542,15 +3983,17 @@ def slugify(text: str) -> str:
 def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
              math_delims=False, doc=None, figure_dir: Path | None = None,
              figure_vlm: str | None = None) -> str:
-    global _PITCH, _PROF
+    global _PITCH, _PROF, _WORD_FORMS
     _PITCH = prof.line_pitch
     _PROF = prof
     lines = [l for l in lines if l.kind != "furniture"]
+    # learned before the merge, because the merge itself de-hyphenates
+    _WORD_FORMS = learn_word_forms(lines)
     lines = merge_split_headings(lines)
 
     out: list[str] = []
     toc: list[tuple[int, str]] = []
-    word_forms = learn_word_forms(lines)
+    word_forms = _WORD_FORMS
     para: list[str] = []
     code: list[str] = []
     prev: Line | None = None
@@ -4009,7 +4452,10 @@ def build_head(prof: Profile, lines: list[Line], toc: list, all_meta: list) -> s
     # A document with no detectable title page still needs a name in both
     # places; emitting `title: ""` and a bare `# ` was never useful.
     book_title = prof.canonical_title or Path(prof.source_name).stem
-    y = ["---", f"title: {_yq(book_title)}"]
+    # Papers, decks and standard documents all record what they were
+    # identified as; books were the one genre that did not, so 347 of the
+    # 1,562 documents in a library sweep came out with no `type` at all.
+    y = ["---", f"title: {_yq(book_title)}", f"type: {prof.doc_type}"]
     if subtitle:  y.append(f"subtitle: {_yq(subtitle)}")
     if edition:   y.append(f"edition: {_yq(edition)}")
     if authors:   y.append("authors:"); y += [f"  - {_yq(a)}" for a in authors[:6]]
@@ -4638,6 +5084,16 @@ def main():
         doc.close()
         sys.exit(f"{src.name}: no text layer on {scope} — this is an image-only "
                  "scan. Run OCR first (Chandra 2, Marker, or ocrmypdf) and convert the result.")
+
+    broken = broken_text_layer(lines)
+    if broken is not None:
+        share, symptom = broken
+        print(f"{src.name}: warning — {share:.0%} of this PDF's text layer "
+              f"{symptom}, and the Markdown will carry that through. The "
+              "fonts are subset without a usable ToUnicode map, so the pages draw "
+              "correctly but cannot be copied out of. Re-reading the page images "
+              "with OCR (Chandra 2, Marker, or ocrmypdf) is the way around it.",
+              file=sys.stderr)
 
     prof = build_profile(lines, doc, pages)
     prof.page_count, prof.source_name, prof.doc = doc.page_count, src.name, doc
