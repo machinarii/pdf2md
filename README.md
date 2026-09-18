@@ -65,6 +65,10 @@ DOC / ODT / RTF input additionally needs LibreOffice (`soffice`) on `PATH` or pa
 - [Audit and fixes](#audit-and-fixes)
 - [Design principles](#design-principles)
 - [Robustness sweep](#robustness-sweep)
+- [Real-library sweep](#real-library-sweep)
+- [Whole-library run](#whole-library-run)
+- [EPUB sweep](#epub-sweep)
+- [arXiv sweep](#arxiv-sweep)
 - [Testing](#testing)
 - [Known gaps](#known-gaps)
 - [Files](#files)
@@ -504,6 +508,108 @@ Six classifier and layout fixes came out of the sweep: `Skia/PDF` removed from d
 
 ---
 
+## Real-library sweep
+
+The generated fixtures above are inspectable but agreeable. A second sweep ran the converter over a personal library of **1,566 real PDFs** — 99 subject folders, 21 KB to 727 MB, authored ebooks, ACM and CHI papers, conference decks, scanned art books and government reports — measuring, per file, the share of PyMuPDF's own words that survived into the Markdown.
+
+The measurement set was 376 documents (35,661 pages, 8.3 minutes to convert): a size-stratified sample of 212 covering every subject folder, plus every document in the library whose pages are all rotated. Median word recall **0.972**; 364 of 376 convert, and all 12 refusals are verified image-only scans.
+
+It found seven defects that no generated fixture had:
+
+- **Every page of a `/Rotate 90` or `/Rotate 270` PDF was thrown away.** 178 documents — 11.4% of the library — were affected. `get_text()` reports each line's `dir` and `bbox` in *unrotated* page space while `page.rect` is the rotated one, so on a landscape PDF the body text reads as `dir (0,-1)` and the sideways-text filter discarded it. The converter then reported "no text layer — this is an image-only scan" on documents with a perfect text layer, or, where a handful of genuinely vertical lines survived, emitted those and called it a 30-page deck: one 30-page compendium came out as 424 characters of its 33,000. Both `dir` and `bbox` now pass through `page.rotation_matrix`, which is the identity on an upright page. 174 of the 178 now convert at 0.970 median recall; the other four are real scans.
+- **An undecodable text layer produced megabytes of confident gibberish.** A PDF whose fonts are subset with no usable ToUnicode map extracts as a substitution cipher — `Farming management` comes back as `)DUPLQJ PDQDJHPHQW` — and nothing downstream can tell, because the line count, font metrics and layout are exactly as healthy as a good document's. Six library documents converted this way, one of them 301 KB. This is the same failure the image-only guard exists to prevent, so it now warns in the same voice. See [Known gaps](#known-gaps) for the thresholds and what still slips through.
+- **ACM front matter landed in the YAML as affiliations.** The title-block labeller took every unrecognised line as an affiliation, so author keywords, ACM classification codes, General Terms, copyright notices and — where a sidebar layout defeats the column split — whole sentences of the abstract were published as the authors' institutions. 48 of 364 outputs were affected, now 21.
+- **An animation build came out as four slides.** A slide whose bullets appear one click at a time exports one PDF page per click, and each page was read as a slide of its own: the heading repeated four times, the first bullet three. This was the single largest source of duplicated headings in the library. Consecutive pages sharing a title now collapse to the one that already contains the rest — in either direction, because a build can take an overlay away as well as add one, and tested both as a set of lines and as a prefix of the slide's text, because revealing a bullet re-wraps the lines above it. Documents with a quarter or more of their headings duplicated: 12 → 6.
+- **A wrapped slide title was cut at the first line.** `Specific: The Prioritization Exercise` arrived as a heading `Specific: The` followed by two one-word bullets. On a deck whose body is set at the title's own size, size cannot decide this; the continuation is recognised by geometry instead — the title's left edge, the title's line pitch, and a visibly bigger gap before the body.
+- **Symbol-font glyphs printed as tofu.** Wingdings and Symbol have no Unicode meaning, so they are encoded into the Private Use Area. One book carried 7,266 of them into its Markdown, including inside headings and the anchors generated from them. A leading one is the line's bullet and becomes a real one; the rest are dropped. Across the library, 8,580 → 90.
+- **A page *about* copyright was dropped as a copyright page.** The rule counts keywords and had no length guard, so two 11,800-character pages of an article on copyright law vanished — the silent-content-loss failure this converter exists to avoid. A colophon is also short, and the rule now says so.
+
+---
+
+## Whole-library run
+
+The sweeps above sample. This is the whole of `~/knowledge-base/books-pdf`, in
+randomised order, with nothing held back: **1,593 files, 18.8 GB, 138,464
+pages**, five minutes of wall-clock across eight shards, 227 MB of Markdown.
+
+**1,562 of 1,593 convert (98.1%).** All 29 refusals were checked against
+PyMuPDF's own extraction and every one is a genuine image-only scan — **zero
+false refusals**. (The two remaining non-conversions are `.rtf` files, which
+need LibreOffice.) Unique-word recall against PyMuPDF has a median of
+**0.9868**; 10 documents fall below 0.80, and those are the ones whose own
+font encodings are broken, which the converter now warns about. Private-use
+and control characters across all 227 MB of output: **364**.
+
+It also turned up two defects the sampled sweeps had hidden.
+
+**Books did not record their own genre.** Papers, decks and documents all
+write a `type` field; books did not, so 347 outputs said nothing about what
+they had been identified as.
+
+**The title page was chosen by length, so dedications won.** A book's front
+matter offers several short display-set pages, and the longest of them was
+taken as the title -- which published `To Karen, Paul, Anna, and Jack --
+Michael T. Goodrich To Isabel...` and an "other books by this author" list as
+the titles of their books, over real title pages set at 25pt and 78pt a few
+leaves earlier. Two things were wrong. Dedications were reaching the title
+test at all, because the rule that recognises them required small type, and a
+dedication is set in display type as often as not. And the choice between the
+genuine title pages was being made on length rather than on typography.
+
+Size now decides *whether* a page is a title page -- it must be display-set
+against the document's own body size, which is what separates it from a 12pt
+dedication or a 10pt backlist. Among the pages that pass, the title page
+proper is the one carrying the most of the title block: the half-title is one
+line, the title page is several. Picking the largest type instead is just as
+wrong in the other direction -- the half-title is set *bigger* than the title
+page it faces (51pt against 21pt in one book, and one book opens on a
+printer's ornament at 93pt), which picks a single word and loses every
+subtitle with it.
+
+Across the 1,562 converted documents this changed 31 titles: 21 are plain
+repairs (`Figure 4 2 6 8 8 9 R A Relationship Diagram` to `Games People Play`,
+a dedication to `Data Structures and Algorithms in Java`), four are lateral
+moves between two equally poor readings of a badly built PDF, and none turned
+a good title into a bad one. Word recall over the whole corpus is unchanged.
+
+---
+
+## EPUB sweep
+
+Every EPUB in the same library — 23 books, 0.4 GB, nine seconds. An EPUB is the
+easiest input to grade, because it carries its own structure: the OPF names the
+title and authors, and the XHTML says exactly where the headings are.
+
+All 23 convert. Word recall against the books' own XHTML has a **median of
+1.0000** and a worst case of 0.9951; the title matches the OPF metadata on
+**23 of 23**; no HTML entity and no control character reaches the Markdown. The
+only raw tags in any output are the HTML *code examples* that three of the books
+print in `<pre>` blocks, which is correct. The two `.rtf` files alongside them
+are refused with `converting .rtf needs LibreOffice (soffice) on PATH` — the
+documented dependency, reported rather than crashed on.
+
+No defect was found in the EPUB path.
+
+---
+
+## arXiv sweep
+
+Fifty papers pulled at random from arXiv across eleven subject categories — cs.CL, cs.CV, cs.LG, cs.SE, cs.HC, math.PR, math.AG, physics.optics, cond-mat.soft, q-bio.NC, stat.ME, econ.EM, eess.SP and astro-ph.GA — 1,012 pages, 39 seconds. Every paper's title and author list was checked against arXiv's own metadata rather than by eye.
+
+All 50 convert and all 50 are classified `paper`. The title matches arXiv's exactly on 47 of 50; the arXiv identifier is recovered from the sideways stamp on 48 of 50; word recall against PyMuPDF's own extraction has a median of 0.971.
+
+Four more defects came out of it, all of them in papers whose typography carries no heading style at all:
+
+- **REVTeX and IEEE section headings were invisible.** `I. INTRODUCTION` is centred and set in the body face at the body size — there is no style to rank and no margin to measure against, so five of the six papers written that way lost *every* section heading in the document. What is left is the numbering, and it is strong evidence: a run of short isolated lines numbered I, II, III in order is a section spine and nothing else. Three members are required, counting from the first, so a stray `V. Smith` in a bibliography cannot start one; letter subsections between two members are then placed under them.
+- **The abstract came out as a stack of H1s.** IEEE sets the abstract in a bold face of its own, the style ranking learned that face as a heading style, and every wrapped line of the abstract became a heading. Papers now get the same heading-density check that books already had: ten heading candidates in ten consecutive lines is a paragraph.
+- **`Abstract—` was not an abstract.** The inline-abstract pattern required whitespace after the delimiter, which the IEEE em-dash convention does not have, so the abstract went unlabelled.
+- **A soft hyphen left every hyphenated word broken.** A discretionary hyphen means "the typesetter broke the word here", and it has width, so the span joiner adds a space after it: one 12-page paper carried 183 of `How\u00ad ever`, `illus\u00ad trates`, `audi\u00ad ence`. Reflow now treats it as the hyphenation mark it is.
+- **A tab survived into a heading and its anchor.** `3.2.\t Critical Design`. A tab, or a run of spaces, inside an extracted line is the PDF's own layout spacing; leading whitespace is still left alone, because a code block's indent is real.
+- **A figure's LaTeX source was printed as a code block.** A figure exported from Inkscape keeps the source of its labels in an invisible base64 `<latexit>` annotation: none of it is drawn on the page, all of it is in the text layer, and it arrived as a fenced block of gibberish with the real label welded onto the end.
+- **A section number was separated from its own title.** LaTeX emits `4.1` and its title as two blocks on one baseline, a hair apart in *y*. The extractor bands the baseline to keep them together and says so in a comment; the column reordering then re-sorted on raw `y0` and undid it, so `Repeated Sampling and Output Variabil-` came out ahead of its own `4.1`, the merge that rejoins them never fired, and the tail `ity` was left as a paragraph. Headings truncated mid-word across the 50 papers: 16 → 6.
+
+---
+
 ## Testing
 
 ```
@@ -511,15 +617,16 @@ pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 ```
 
-Three suites, all generating their fixtures at runtime so no binaries live in the repository:
+Four suites, all generating their fixtures at runtime so no binaries live in the repository:
 
 | File | Covers |
 |---|---|
 | `tests/test_smoke.py` | a PDF and an EPUB convert: YAML front matter, paragraph reflow, artifacts, EPUB metadata / headings / lists |
 | `tests/test_errors.py` | every bad-input path exits with a readable message and no traceback: non-PDF, directory, encrypted, malformed `--pages`, non-zip EPUB/DOCX, overwriting the input |
 | `tests/test_regressions.py` | one test per defect fixed in the audit below, plus a build-integrity check that `pdf2md_all.py` still matches `structured.py` |
+| `tests/test_pdf_quality.py` | layout and text quality on generated PDFs: column reading order, learned heading styles, running heads, reflow — and the defects the real-library and arXiv sweeps found: rotated pages read in order, undecodable text layers reported, ACM front matter kept out of the YAML, animation builds collapsed, wrapped slide and numbered headings rejoined, private-use glyphs dropped, REVTeX section spines found |
 
-CI runs all three on Python 3.10–3.13.
+CI runs all four on Python 3.10–3.13.
 
 The full regression suite (`test_books.py`) and its fixtures live with the modular development build and are not in this repository. It runs the eight core fixtures, the four generated sweep documents, and any of the five third-party sweep documents that are present, with `--artifacts`, and asserts ~80 golden invariants:
 
@@ -554,6 +661,9 @@ The suite found real bugs on its first run and on the first tree implementation.
 - **Landscape books** (photo books, catalogs, manuals) are not distinguished from decks; the design (image coverage, template repetition, prose test) was worked out but not implemented.
 - **Deck fixtures are synthetic.** A real PowerPoint export with charts, SmartArt and two-column layouts will stress the per-slide path further; speaker notes are not in exported PDFs.
 - **Image-only PDFs** are refused; run Chandra 2 or Marker first.
+- **Column reading order is wrong on a minority of two-column pages.** The template is misread and the columns interleave line by line, which welds sentences together, invents words where a hyphen is then joined across the break, and runs reference-list entries into the body. Two targeted repairs were written and measured over the 376-document library sweep -- anchoring the template on whichever column start matches the page's left margin, and ignoring gutter-crossing lines when measuring a column's right edge. They fixed a handful of pages and made more documents worse (mean word precision unchanged, recall 0.973 to 0.969, better on 42 documents and worse on 65), so they were reverted. The measurement harness is the useful artefact here: any future attempt should be held to it.
+- **Output is named after the input file**, because that is the only name the converter is given -- a library of `p517.pdf` yields `p517.md`, even though its front matter says `title: "Accessible Voting: One Machine, One Vote for Everyone"`. `tools/name_by_title.py` renames a directory of output from that front matter.
+- **Undecodable text layers are warned about, not repaired.** Three signals, each calibrated against the 1,566-book library so the threshold sits in open space between the worst honest document and the best broken one: under 30% letters (honest worst 54%), over 15% of words vowel-less (honest worst 8%), over 6% of letters inside 24-character run-ons where the encoding dropped the space (honest worst 1.7%). That catches six of the library's seven broken documents and fires on none of the other 1,473. A cipher into the *accented-letter* range still reads as letters and words and slips through, and no attempt is made to solve the substitution — OCR is the answer, and the warning says so. The conversion still runs, because the caller may want the layout anyway.
 - **Structured input coverage** is what four generated fixtures exercise: no real-world EPUB with images, nested lists in footnotes, or a multi-level nav has been run yet; DOCX tracked changes, comments and text boxes are ignored.
 - **Nested tables** are flattened, not nested: the inner table is emitted as its own table and the cell that held it is left empty. Markdown has no nested-table syntax; the cell text survives, the containment does not.
 - **Footnote labels are page-qualified** (`[^p12-3]`) because printed numbering restarts on every page. They are stable and unique, but they are not the numbers the book printed.
@@ -567,6 +677,7 @@ The suite found real bugs on its first run and on the first tree implementation.
 pdf2md_all.py               # single-file build (everything); `python3 pdf2md_all.py in.pdf` is the whole tool
 structured.py               # EPUB / DOCX / DOC reader module (also merged into pdf2md_all.py)
 tools/sync_structured.py    # copies structured.py into the merged build; --check fails if they diverge
+tools/name_by_title.py      # renames converted Markdown after the title in its front matter
 tests/test_smoke.py         # conversion smoke tests
 tests/test_errors.py        # bad-input diagnostics
 tests/test_regressions.py   # one test per fixed defect + build-integrity check
