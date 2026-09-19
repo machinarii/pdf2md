@@ -1,10 +1,99 @@
-# pdf2md — Structure-Aware PDF / EPUB / DOCX → Markdown
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="pdf2md — From printed pages to readable Markdown" width="100%">
+</p>
 
-A converter that reads PDFs at the span level (font, size, weight, position), decides what kind of document it is holding, infers structure from evidence rather than regex guesswork, and emits clean Markdown with YAML metadata, a grouped table of contents, and inferred content structure. Complex layouts and damaged text still require review.
+<h1 align="center">pdf2md</h1>
+<p align="center"><strong>Keep the words. Recover the structure.</strong></p>
+<p align="center">Turn books, research papers, and everyday documents into readable, inspectable Markdown.</p>
 
-Reads PDF, EPUB, DOCX, and — through LibreOffice — DOC, ODT and RTF. Validated on real ebooks, research papers, slide decks and business documents, spanning several production pipelines: authored LaTeX, OCR'd page scans, and Word, Impress and Writer exports.
+<p align="center">
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-10b981" alt="Version 0.1.0"></a>
+  <a href="https://github.com/machinarii/pdf2md/actions/workflows/ci.yml"><img src="https://github.com/machinarii/pdf2md/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.10 or newer"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-An earlier sweep of 17 unseen documents from library test corpora and generators — a Japanese academic slide deck, a NAACL paper, the DMCA summary, a Federal Register issue (three columns), a tax form, a Google Docs page, budget tables, a Japanese page, a memo, a whitepaper, a landscape vendor table, a 4:3 deck, and an image-only scan — converts 16 of 17 (the scan was refused with OCR disabled) with every type call defensible. That historical sweep is separate from the current repository test suite and the development comparison below.
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#see-the-output">See the output</a> ·
+  <a href="#measured-comparison-and-limits">Measurements</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+
+| | Feature | What you get |
+|---|---|---|
+| 📖 | **Readable text** | Reflow printed lines into paragraphs and rejoin wrapped words. |
+| 🧭 | **Adaptive structure** | Infer headings and reading order from typography and page geometry, including unfamiliar layouts. |
+| 🗂️ | **More than PDF** | Read EPUB and DOCX directly; DOC, ODT, and RTF through LibreOffice. |
+| 🔍 | **Inspectable conversion** | Trace classified text to source pages and bounding boxes through optional audit artifacts. |
+| 🖥️ | **Local by default** | Convert text layers with PyMuPDF; no cloud account or API key required. |
+| 🧪 | **Optional selective OCR** | Use local Tesseract for empty image pages and damaged text, with logged repair decisions. |
+
+The default install needs only PyMuPDF. pdf2md learns layout patterns within each
+file; it does not train or remember a model across your library. Complex layouts,
+formulas, and damaged text still need review. See [known gaps](#known-gaps).
+
+```bash
+pip install -r requirements.txt
+python3 pdf2md_all.py book.pdf -o book.md
+python3 pdf2md_all.py --version  # pdf2md 0.1.0
+```
+
+## See the output
+
+Same original two-column PDF, two unedited converter outputs. This small synthetic
+example demonstrates paragraph reflow and reading order, not general accuracy.
+Both tools use their local defaults; pdf2md only adds `--no-toc`.
+
+<details>
+<summary>View the source page</summary>
+
+![Original two-column demo page](examples/comparison/source.png)
+
+</details>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>1 Introduction<br>
+<br>
+2 Preservation<br>
+<br>
+A useful archive preserves the structure<br>
+of a document as well as its words. Short<br>
+lines on a printed page should become<br>
+one readable paragraph in Markdown.<br>
+<br>
+Clear text is easier to search and review.<br>
+Keep the source file so each conversion<br>
+can be checked against the printed page.<br>
+Record the tool version with the output.<br>
+<br>
+Research papers often place two columns<br>
+on the same page. Reading order matters:<br>
+finish the left column before continuing<br>
+with the text at the top of the right.</code></td>
+<td valign="top"><code>1 Introduction<br>
+<br>
+A useful archive preserves the structure of a document as well as its words. Short lines on a printed page should become one readable paragraph in Markdown.<br>
+<br>
+Research papers often place two columns on the same page. Reading order matters: finish the left column before continuing with the text at the top of the right.</code></td></tr>
+</table>
+
+Here, MarkItDown places the right-column heading before the left-column text,
+and alternates paragraphs between columns. pdf2md keeps the left column together
+and joins its printed lines into paragraphs. **Both miss the two section heading
+tags in this demo**; pdf2md does recover the document title as an H1. These are
+literal excerpts; the full outputs below retain all content from the example.
+
+[Full pdf2md output](examples/comparison/pdf2md.md) ·
+[Full MarkItDown output](examples/comparison/markitdown.md) ·
+[Source generator and reproduction](examples/comparison/README.md)
+
+For a broader view, the earlier eight-file development comparison measured about
+7.1× faster conversion and 42/42 selected checks versus 20/42. These are
+sample-specific results from before the later library-sweep integration, not a
+complete Markdown formatting score. [Read the methodology and limits](benchmarks/comparison-2026-09-19.md).
 
 ---
 
@@ -160,6 +249,7 @@ DOC / ODT / RTF input additionally needs LibreOffice (`soffice`) on `PATH` or pa
 
 ## Contents
 
+- [See the output](#see-the-output)
 - [Cleaner PDF Markdown](#cleaner-pdf-markdown)
 - [Structure, selective OCR, and quality evaluation](#structure-selective-ocr-and-quality-evaluation)
 - [Measured comparison and limits](#measured-comparison-and-limits)
@@ -430,6 +520,7 @@ Metadata provenance: **book authors come from the `©` line** (copyright holders
 ## CLI reference
 
 ```
+python3 pdf2md_all.py --version                       # installed converter version
 python3 pdf2md_all.py in.pdf                          # -> in.md, type auto-detected
 python3 pdf2md_all.py book.epub                       # EPUB 2 or 3
 python3 pdf2md_all.py spec.docx                       # Word

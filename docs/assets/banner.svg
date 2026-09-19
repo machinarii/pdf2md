@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">pdf2md — From printed pages to readable Markdown</title>
+  <desc id="desc">A document with two columns transforms into a Markdown document. Local conversion, adaptive structure, inspectable output.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101c32"/><stop offset="1" stop-color="#192d45"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#7dd3fc" stroke-opacity=".05"/></pattern>
+  </defs>
+  <rect width="1200" height="360" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="24" fill="url(#grid)"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="64" y="74" fill="#6ee7b7" font-size="14" letter-spacing="3">STRUCTURE-AWARE DOCUMENT CONVERSION</text>
+    <text x="60" y="155" fill="#f8fafc" font-size="72" font-weight="700">pdf<tspan fill="#6ee7b7">2</tspan>md</text>
+    <text x="64" y="208" fill="#e2e8f0" font-size="25">From printed pages to readable Markdown.</text>
+    <text x="64" y="264" fill="#9eb5cc" font-size="17">PDF · EPUB · DOCX</text>
+    <text x="64" y="298" fill="#9eb5cc" font-size="15">Local by default. Adaptive structure. Inspectable output.</text>
+  </g>
+  <g transform="translate(796 78)">
+    <rect width="116" height="166" rx="12" fill="#243b54" stroke="#54748e"/>
+    <path d="M20 30h76M20 48h50M20 75h30m16 0h30M20 89h30m16 0h30M20 103h30m16 0h30M20 117h30m16 0h30M20 131h30m16 0h30" stroke="#9eb5cc" stroke-width="4" stroke-linecap="round"/>
+    <path d="M135 83h37m-10-10 10 10-10 10" fill="none" stroke="#6ee7b7" stroke-width="3"/>
+    <rect x="192" width="142" height="190" rx="12" fill="#eaf5f1"/>
+    <text x="210" y="46" fill="#12644d" font-family="monospace" font-weight="700" font-size="23"># md</text>
+    <path d="M212 73h100M212 88h90M212 103h100M212 131h100M212 146h80M212 161h94" stroke="#729a8b" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>
