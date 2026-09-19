@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> ·
   <a href="#framework">Framework</a> ·
+  <a href="#quick-start">Quick start</a> ·
   <a href="#see-the-output">Examples</a> ·
   <a href="#cleaner-input-for-graphrag">GraphRAG</a> ·
   <a href="#performance">Performance</a> ·
@@ -32,32 +32,6 @@ layout to recover structure. It runs locally with PyMuPDF; no API key is needed.
 | 🧭 **Adaptive layout** | Infer headings and column reading order for books, papers, and reports. |
 | 🔍 **Source traceability** | Inspect classified text, page locations, and optional OCR repair decisions. |
 | 🕸️ **GraphRAG preparation** | Give downstream chunking and relationship extraction more coherent source text. |
-
-## Quick start
-
-Requires **Python 3.10+**. Clone the repository and install its dependency:
-
-```bash
-git clone https://github.com/machinarii/pdf2md.git
-cd pdf2md
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python3 pdf2md_all.py book.pdf -o book.md
-```
-
-On Windows, activate with `.venv\Scripts\activate` instead.
-
-```bash
-python3 pdf2md_all.py paper.pdf --no-toc -o paper.md
-python3 pdf2md_all.py book.epub -o book.md
-python3 pdf2md_all.py document.docx -o document.md
-python3 pdf2md_all.py --version  # pdf2md 0.1.0
-```
-
-Output includes inferred headings, reflowed text, YAML metadata, and a table of
-contents unless disabled. DOC, ODT, and RTF input additionally requires LibreOffice.
-Run `python3 pdf2md_all.py --help` for all options.
 
 ## Framework
 
@@ -135,6 +109,32 @@ ASSEMBLE   Structure → readable Markdown
 These are practical, research-inspired methods, not pretrained layout models or
 cross-document training. [Architecture and limitations](docs/architecture.md) ·
 [Research context and OCR details](docs/usage.md#structure-selective-ocr-and-quality-evaluation)
+
+## Quick start
+
+Requires **Python 3.10+**. Clone the repository and install its dependency:
+
+```bash
+git clone https://github.com/machinarii/pdf2md.git
+cd pdf2md
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 pdf2md_all.py book.pdf -o book.md
+```
+
+On Windows, activate with `.venv\Scripts\activate` instead.
+
+```bash
+python3 pdf2md_all.py paper.pdf --no-toc -o paper.md
+python3 pdf2md_all.py book.epub -o book.md
+python3 pdf2md_all.py document.docx -o document.md
+python3 pdf2md_all.py --version  # pdf2md 0.1.0
+```
+
+Output includes inferred headings, reflowed text, YAML metadata, and a table of
+contents unless disabled. DOC, ODT, and RTF input additionally requires LibreOffice.
+Run `python3 pdf2md_all.py --help` for all options.
 
 ## See the output
 
