@@ -13,6 +13,8 @@ Requires: pymupdf   (pip install pymupdf)
 
 from __future__ import annotations
 
+__version__ = "0.1.0"
+
 import argparse
 import copy
 import json
@@ -4233,7 +4235,7 @@ def write_quality_artifacts(directory, src, md, prof, pages, elapsed):
             for chunk in iter(lambda: stream.read(1024*1024), b""):
                 h.update(chunk)
         return h.hexdigest()
-    payload = {"schema_version": 1, "source": str(src.resolve()), "source_sha256": digest(src),
+    payload = {"schema_version": 1, "converter_version": __version__, "source": str(src.resolve()), "source_sha256": digest(src),
                "markdown_sha256": hashlib.sha256(md.encode("utf-8")).hexdigest(),
                "converter_sha256": digest(Path(__file__)), "pages": [p+1 for p in pages],
                "elapsed_seconds": elapsed, "ocr_repairs": prof.repairs,
@@ -4721,7 +4723,7 @@ def build_head(prof: Profile, lines: list[Line], toc: list, all_meta: list) -> s
     if year:      y.append(f"year: {year}")
     if isbns:     y.append("isbn:"); y += [f"  - {i}" for i in isbns]
     y += [f"pages: {prof.page_count}", f"source: {_yq(prof.source_name)}",
-          "generator: pdf2md", "---", ""]
+          "generator: pdf2md", f"generator_version: {__version__}", "---", ""]
 
     # ---- fixed layout: title / subtitle / authors / edition · publisher, year
     # A document with no detectable title page still needs a name; the
@@ -4778,7 +4780,7 @@ def build_simple_head(prof: Profile, toc: list) -> str:
     for k, v in fields.items():
         y.append(f"{k.lower().replace(' ', '_')}: {_yq(v)}")
     if prof.doc_type == "deck": y.append(f"slides: {prof.page_count}")
-    y += [f"pages: {prof.page_count}", f"source: {_yq(prof.source_name)}", "generator: pdf2md", "---", ""]
+    y += [f"pages: {prof.page_count}", f"source: {_yq(prof.source_name)}", "generator: pdf2md", f"generator_version: {__version__}", "---", ""]
     head = y + [f"# {title}"]
     if m.get("subtitle"): head.append(f"*{m['subtitle']}*  ")
     if authors: head.append("**" + ", ".join(authors) + "**  ")
@@ -4807,7 +4809,7 @@ def build_paper_head(prof: Profile, toc: list) -> str:
     if pm.get("affiliations"): y.append("affiliations:"); y += [f"  - {_yq(a)}" for a in pm['affiliations'][:8]]
     if pm.get("arxiv"): y.append(f"arxiv: {pm['arxiv']}")
     if pm.get("venue"): y.append(f"venue: {_yq(pm['venue'])}")
-    y += [f"pages: {prof.page_count}", f"source: {_yq(prof.source_name)}", "generator: pdf2md", "---", ""]
+    y += [f"pages: {prof.page_count}", f"source: {_yq(prof.source_name)}", "generator: pdf2md", f"generator_version: {__version__}", "---", ""]
     head = y + [f"# {title}"]
     if authors:
         head.append("**" + ", ".join(authors) + "**  ")
@@ -5105,7 +5107,7 @@ def render_structured(meta: dict, blocks: list, prof: "Profile", *, make_toc=Tru
     if meta.get("language"): y.append(f"language: {meta['language']}")
     for kf, v in fields.items():
         y.append(f"{kf.lower().replace(' ', '_')}: {_yq(v)}")
-    y += [f"source: {_yq(prof.source_name)}", "generator: pdf2md", "---", ""]
+    y += [f"source: {_yq(prof.source_name)}", "generator: pdf2md", f"generator_version: {__version__}", "---", ""]
     head = y + [f"# {title}"]
     if authors: head.append("**" + ", ".join(authors) + "**  ")
     imprint = " · ".join(x for x in ((meta.get("publisher") or None), (str(meta["year"]) if meta.get("year") else None)) if x)
@@ -5290,6 +5292,7 @@ def write_output(out: Path, md: str) -> None:
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version=f"pdf2md {__version__}")
     ap.add_argument("input", help="PDF, EPUB, DOCX, DOC, ODT or RTF")
     ap.add_argument("-o", "--output")
     ap.add_argument("--pages", default="", help="e.g. 44-120 or 1,5,9 (1-based)")
