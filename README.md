@@ -1,10 +1,10 @@
 # pdf2md — Structure-Aware PDF / EPUB / DOCX → Markdown
 
-A converter that reads PDFs at the span level (font, size, weight, position), decides what kind of document it is holding, infers structure from evidence rather than regex guesswork, and emits clean Markdown with YAML metadata, a grouped table of contents, and every content type rendered appropriately.
+A converter that reads PDFs at the span level (font, size, weight, position), decides what kind of document it is holding, infers structure from evidence rather than regex guesswork, and emits clean Markdown with YAML metadata, a grouped table of contents, and inferred content structure. Complex layouts and damaged text still require review.
 
 Reads PDF, EPUB, DOCX, and — through LibreOffice — DOC, ODT and RTF. Validated on real ebooks, research papers, slide decks and business documents, spanning several production pipelines: authored LaTeX, OCR'd page scans, and Word, Impress and Writer exports.
 
-A further sweep of 17 unseen documents from library test corpora and generators — a Japanese academic slide deck, a NAACL paper, the DMCA summary, a Federal Register issue (three columns), a tax form, a Google Docs page, budget tables, a Japanese page, a memo, a whitepaper, a landscape vendor table, a 4:3 deck, and an image-only scan — converts 16 of 17 (the scan is refused by design) with every type call defensible. Ten regression tests cover the core documents, the four generated sweep documents, five optional third-party ones, and type-classification margins.
+An earlier sweep of 17 unseen documents from library test corpora and generators — a Japanese academic slide deck, a NAACL paper, the DMCA summary, a Federal Register issue (three columns), a tax form, a Google Docs page, budget tables, a Japanese page, a memo, a whitepaper, a landscape vendor table, a 4:3 deck, and an image-only scan — converts 16 of 17 (the scan was refused with OCR disabled) with every type call defensible. That historical sweep is separate from the current repository test suite and the development comparison below.
 
 ---
 
@@ -36,6 +36,115 @@ information between files. `--profile` reports learned heading styles, and
 These heuristics cannot reconstruct missing OCR text or guarantee exact formula
 transcription from a PDF text layer.
 
+## Structure, selective OCR, and quality evaluation
+
+The PDF renderer now consumes an explicit document tree: sections have parents,
+body lines form paragraph blocks (including continuations across pages), and
+nested list items have parent relationships. Source records retain page numbers,
+bounding boxes and original extracted text through heading and caption merges.
+The tree uses the existing classifiers; it is not a trained layout model and can
+still inherit their mistakes.
+
+```bash
+# Lightweight text-layer conversion, with inspectable structure and provenance
+python3 pdf2md_all.py book.pdf -o book.md --artifacts artifacts/book
+
+# Local OCR only for empty image pages and visibly damaged text lines
+python3 pdf2md_all.py scan.pdf -o scan.md --ocr auto --ocr-language eng \
+  --artifacts artifacts/scan
+
+# Source-grounded quality and performance checks
+python3 tools/benchmark.py manifest.json --output artifacts/benchmark
+
+# Optional comparison dependency; not required for normal conversion
+pip install 'markitdown[pdf]'
+python3 tools/compare_converters.py manifest.json \
+  --output artifacts/comparison --repeats 3
+```
+
+`--ocr auto` requires the Tesseract executable and installed language data. It
+runs locally, with a per-region timeout and a raster pixel budget. Healthy text
+is not sent through OCR. Lines containing replacement/private-use characters are
+recognized from cropped images; empty image pages are recognized as whole pages.
+Known Symbol-font bullets are decoded directly; isolated unknown symbols are
+skipped rather than guessed as letters. Code and math-heavy lines are excluded
+from line repair. Rotated pages are
+explicitly recorded as skipped. Mixed pages with healthy text plus an image
+containing additional text are not automatically OCRed by this first router.
+
+Repairs must pass a confidence threshold and checks for intact token order,
+counts, numerical values and plausible length. Rejected candidates leave the
+original text unchanged. Newly recognized scans have no trustworthy original
+text for comparison, so accepted results still need visual review. These gates
+are conservative heuristics, not guarantees of faithful transcription. There
+is no generative spell-check, translation, or modernization of historical text.
+Choose language packs explicitly, for example `--ocr-language eng+deu`.
+With OCR disabled, the existing cleanup maps leading private-use glyphs to bullets
+and removes other private-use glyphs. OCR mode preserves unknown private-use text
+for repair or review instead. Source records retain the original extracted text.
+
+OCR requires `--artifacts` so that the audit cannot be silently lost. Alongside
+the existing profile and block exports, artifacts now include:
+
+- `document.json`: section/paragraph/list tree, original text locations, source
+  and converter SHA-256 hashes, output hash, command arguments, extraction-text
+  transformations and elapsed time. It does not map every Markdown byte or log
+  every renderer formatting operation.
+- `repairs.json`: original and candidate text, crop location, backend, language,
+  confidence, and accepted/rejected/skipped decision. Written even if OCR does
+  not recover enough text for conversion.
+- `blocks.jsonl`: classified lines with original source records, including
+  furniture that does not appear in Markdown.
+
+Original PDFs are never changed. The source path and hash permit verification;
+these artifacts are not a self-contained archival package or RO-Crate export.
+
+The benchmark manifest and supported assertions are documented in
+[benchmarks/README.md](benchmarks/README.md). MarkItDown comparison uses its stock
+local PDF converter, disables plugins, and uses no cloud services. Both engines
+process identical complete PDFs in fresh processes, alternating engine order.
+Audit writing and OCR are excluded from that comparison. Timing includes
+converter imports, conversion and output writing; common interpreter/harness
+startup is excluded. Peak RSS includes the worker process, not OCR subprocesses.
+
+These implementations borrow practical ideas from
+[Detect-Order-Construct](https://arxiv.org/abs/2401.11874),
+[MinerU2.5](https://arxiv.org/abs/2509.22186),
+[ParseFixer](https://arxiv.org/abs/2606.11977),
+[OmniDocBench](https://arxiv.org/abs/2412.07626),
+[olmOCR 2](https://arxiv.org/abs/2510.19817), and
+[No Free Lunches](https://arxiv.org/abs/2502.01205).
+They do not reproduce those models, train on DocLayNet, perform learned page
+dewarping, or implement the official benchmark scoring protocols. The default
+installation remains PyMuPDF-only. Local learning still means adapting to the
+current document; cross-document model training is not performed.
+
+
+## Measured comparison and limits
+
+A September 19, 2026 development comparison, before integration of the separate
+library-sweep changes, used eight readable PDFs (635 pages)
+from a seeded sample of a local library, with three trials per converter. Both
+converters rejected one additional empty file.
+
+| Metric | pdf2md | MarkItDown 0.1.7 |
+|---|---:|---:|
+| Selected source-grounded checks | 42/42 | 20/42 |
+| Sum of per-file median conversion times | 5.41 s | 38.31 s |
+| Median across per-file median peak RSS | 69.1 MiB | 124.7 MiB |
+
+pdf2md was about 7.1× faster on this sample. These results are development
+measurements, not an independent benchmark: the sample helped identify and fix
+converter defects. The checks cover selected text, reading order, heading tags
+and some heading levels, and replacement characters. **They do not establish
+that every Markdown file is clean or correctly formatted throughout.** Paragraph
+spacing, nested lists, tables, code fences, footnotes, duplicate headers, and
+rendered readability were not systematically audited across all outputs.
+
+See [comparison methodology and results](benchmarks/comparison-2026-09-19.md)
+for the sampling, environment, timing boundaries, and remaining evaluation work.
+Private source files and generated outputs are not distributed in this repository.
+
 ## Quick start
 
 ```
@@ -51,6 +160,9 @@ DOC / ODT / RTF input additionally needs LibreOffice (`soffice`) on `PATH` or pa
 
 ## Contents
 
+- [Cleaner PDF Markdown](#cleaner-pdf-markdown)
+- [Structure, selective OCR, and quality evaluation](#structure-selective-ocr-and-quality-evaluation)
+- [Measured comparison and limits](#measured-comparison-and-limits)
 - [Quick start](#quick-start)
 - [Why this exists](#why-this-exists)
 - [Architecture](#architecture)
@@ -98,7 +210,7 @@ Stage 0  IDENTIFY   book / paper / deck / document, from four independent
 
 Stage 1  EXTRACT    span-level lines with full typographic metadata;
                     font-class-aware glyph repair; rotated text kept aside;
-                    strict reading order, column-major on two-column pages
+                    page-local column reading order; optional audited selective OCR
 
 Stage 2  PROFILE    global passes over the whole document:
                       body style    = modal (font, size) by character count
@@ -119,10 +231,11 @@ Stage 3  CLASSIFY   furniture | heading | caption | code | body | footnote
 Stage 4  ASSEMBLE   merge split / wrapped headings -> OUTLINE TREE (levels,
                     run-ins, cross-refs, TOC membership from numbering
                     consistency) -> reflow paragraphs across pages and columns
-                    -> render each kind -> head (YAML, title block, grouped TOC)
+                    -> section/paragraph/list document tree -> render each kind
+                    -> head (YAML, title block, grouped TOC)
 ```
 
-Two builds exist and are byte-for-byte equivalent in output. **This repository ships the single-file build**, `pdf2md_all.py` (4,675 lines), which merges all seven modules and is produced by `build_single.py`. Section banners mark where each module begins; the design notes in each module docstring are kept. `python3 pdf2md_all.py in.pdf` is the whole tool. `structured.py` is also kept here as a standalone module for importing the EPUB / DOCX readers on their own.
+The project originated as a modular development build. **This repository ships the single-file build**, `pdf2md_all.py`, which contains the PDF pipeline and inlined structured-format reader. Section banners mark where each module begins; the design notes in each module docstring are kept. `python3 pdf2md_all.py in.pdf` is the whole tool. `structured.py` is also kept here as a standalone module for importing the EPUB / DOCX readers on their own.
 
 The modular development build is kept outside this repository. Its shape, which is also the map of the section banners inside the single file:
 
@@ -132,7 +245,7 @@ The modular development build is kept outside this repository. Its shape, which 
 | `regimes.py` | 490 | content-type engine: regime state machine, lists, footnotes, references, glossary, de-shouting, front matter, copyright |
 | `outline.py` | 201 | heading tree: tokenise → validate numbering → level, kind, TOC membership |
 | `doctype.py` | 203 | document-type classifier with evidence |
-| `papers.py` | 284 | paper signals, document-level column template, title block, heading promotion |
+| `papers.py` | 284 | paper signals, page-local column detection, title block, heading promotion |
 | `decks.py` | 87 | slide rendering |
 | `documents.py` | 66 | PRD / spec / memo title block and metadata fields |
 | `structured.py` | 801 | EPUB / DOCX readers, CSS style ranking, LibreOffice conversion |
@@ -326,7 +439,8 @@ python3 pdf2md_all.py in.pdf --profile                # type + evidence, detecti
 python3 pdf2md_all.py in.pdf --doc-type deck          # override the classifier
 python3 pdf2md_all.py in.pdf --glyph-report           # unmapped non-ASCII with context
 python3 pdf2md_all.py in.pdf --pages 44-120           # subset (1-based, inclusive)
-python3 pdf2md_all.py in.pdf --artifacts DIR          # profile.json, stats.json, blocks.jsonl, pages/
+python3 pdf2md_all.py in.pdf --artifacts DIR          # tree, provenance, repairs, profile, blocks, pages
+python3 pdf2md_all.py scan.pdf --ocr auto --ocr-language eng --artifacts DIR
 python3 pdf2md_all.py in.pdf --emit-json blocks.json  # typed blocks for RAG chunking
 python3 pdf2md_all.py in.pdf --figure-dir figs        # crop figures to PNG and link them
 python3 pdf2md_all.py in.pdf --figure-dir figs --figure-vlm qwen2.5vl:7b
@@ -404,7 +518,7 @@ What each document taught, in the order it was learned. Each is a rule in the co
 41. **Checkbox glyphs are bullets too.** A Japanese deck's `□` bullets scored eight "form markers" and nearly flipped it to document. Glyphs count once; form vocabulary counts.
 42. **Sparse words on one page is not deck evidence.** A landscape vendor table tied deck 4 – document 4 and lost on insertion order. The words-per-page signal needs three pages; ties break document > paper > book > deck.
 43. **A template can have two title placements.** Section slides and content slides put the title at different heights; the top two placements together covering 70% of pages is the template.
-44. **Columns are a document template, not a page property.** Per-page chain-merging of left edges collapsed two columns into one on any page with a wide table (cells fill the gap in ≤25pt steps). A document-level histogram has one peak per column and is robust to any single page.
+44. **Column templates need geometric evidence.** Per-page chain-merging of left edges collapsed two columns into one on any page with a wide table (cells fill the gap in ≤25pt steps). The original document-level histogram helped with this case. Current detection uses page-local evidence to accommodate changes in layout and page width.
 45. **Boundaries belong in the gutter.** The midpoint between column *starts* is inside the left column's text, so every left-column line "crossed" it and became spanning. Gutters lie between a column's right edge and the next start.
 46. **A cluster inside a column's extent is not a column.** A results table's numeric column formed a third "column" until starts were required to lie beyond the previous column's right edge.
 47. **A key/value table is not two columns.** Columns must be *filled* — text running at least halfway to the gutter. A PRD's `Author / Jin` table has two short columns and fails that.
@@ -470,15 +584,15 @@ Also fixed: `--figure-vlm` was accepted without `--figure-dir` and silently did 
 
 **Evidence, then shape, then position, then density.** A line is a heading if its *style* is a heading style, its *text* looks like words, it has *air* above it, and it is not one of many. Each test was added because the previous ones let a specific failure through. Keep them all.
 
-**Global before local.** Per-page heuristics cannot tell a running head from a real heading; "appears at y=39 on 400 pages" is unambiguous. Body size, margin bands, running heads, heading styles, acronyms, index typography, line pitch, column margins are all computed once over the whole document.
+**Global before local.** Per-page heuristics cannot tell a running head from a real heading; "appears at y=39 on 400 pages" is unambiguous. Body style, running heads and heading styles use document-wide evidence; column geometry also adapts to each page.
 
 **Regimes.** A book is not one distribution of lines. The same shape means different things in front matter, body, and back matter.
 
 **Never emit Markdown from unescaped text.** Extraction artefacts at line starts silently become structure.
 
-**Don't chase OCR errors in the parser.** `Andrew Oriony`, `INDESIRARI E` are the OCR engine's mistakes; correcting them is a language-model job on the finished text. The parser's job is to put such text in the right *block*.
+**Keep text corrections verifiable.** Structure inference does not justify rewriting words. Optional selective OCR uses the source image and conservative acceptance gates, records its decisions, and leaves rejected candidates unchanged.
 
-**Deterministic first, model last.** Everything here is deterministic and reproducible. The only model hook is `--figure-vlm`, isolated so a missing Ollama never breaks a conversion.
+**Deterministic first, model last.** The default pipeline uses local extraction and heuristics. Optional Tesseract OCR and `--figure-vlm` are explicit additions; their backend versions and settings can affect results.
 
 ---
 
@@ -617,7 +731,7 @@ pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 ```
 
-Four suites, all generating their fixtures at runtime so no binaries live in the repository:
+Five test modules generate their fixtures at runtime so no binaries live in the repository:
 
 | File | Covers |
 |---|---|
@@ -625,8 +739,20 @@ Four suites, all generating their fixtures at runtime so no binaries live in the
 | `tests/test_errors.py` | every bad-input path exits with a readable message and no traceback: non-PDF, directory, encrypted, malformed `--pages`, non-zip EPUB/DOCX, overwriting the input |
 | `tests/test_regressions.py` | one test per defect fixed in the audit below, plus a build-integrity check that `pdf2md_all.py` still matches `structured.py` |
 | `tests/test_pdf_quality.py` | layout and text quality on generated PDFs: column reading order, learned heading styles, running heads, reflow — and the defects the real-library and arXiv sweeps found: rotated pages read in order, undecodable text layers reported, ACM front matter kept out of the YAML, animation builds collapsed, wrapped slide and numbered headings rejoined, private-use glyphs dropped, REVTeX section spines found |
+| `tests/test_research_pipeline.py` | document trees, provenance, OCR acceptance/rollback, font flags, symbols, and benchmark reporting |
 
-CI runs all four on Python 3.10–3.13.
+The current suite has 82 tests, including the library-sweep regressions and research-pipeline tests. CI runs on Python 3.10–3.13 and installs
+Tesseract with English data for the scan integration test. Locally, that test
+requires the same optional OCR dependency. Also run:
+
+```bash
+python3 tools/sync_structured.py --check
+python3 -m py_compile pdf2md_all.py structured.py tools/benchmark.py tools/compare_converters.py
+ruff check --select F,E9 pdf2md_all.py structured.py tools tests
+```
+
+These regression tests are separate from the source-grounded sample comparison;
+neither constitutes a comprehensive Markdown formatting audit.
 
 The full regression suite (`test_books.py`) and its fixtures live with the modular development build and are not in this repository. It runs the eight core fixtures, the four generated sweep documents, and any of the five third-party sweep documents that are present, with `--artifacts`, and asserts ~80 golden invariants:
 
@@ -660,8 +786,8 @@ The suite found real bugs on its first run and on the first tree implementation.
 - **Language.** Regime keywords, copyright vocabulary, and small-word lists are English-only.
 - **Landscape books** (photo books, catalogs, manuals) are not distinguished from decks; the design (image coverage, template repetition, prose test) was worked out but not implemented.
 - **Deck fixtures are synthetic.** A real PowerPoint export with charts, SmartArt and two-column layouts will stress the per-slide path further; speaker notes are not in exported PDFs.
-- **Image-only PDFs** are refused; run Chandra 2 or Marker first.
-- **Column reading order is wrong on a minority of two-column pages.** The template is misread and the columns interleave line by line, which welds sentences together, invents words where a hyphen is then joined across the break, and runs reference-list entries into the body. Two targeted repairs were written and measured over the 376-document library sweep -- anchoring the template on whichever column start matches the page's left margin, and ignoring gutter-crossing lines when measuring a column's right edge. They fixed a handful of pages and made more documents worse (mean word precision unchanged, recall 0.973 to 0.969, better on 42 documents and worse on 65), so they were reverted. The measurement harness is the useful artefact here: any future attempt should be held to it.
+- **Image-only PDFs** need optional `--ocr auto --artifacts DIR` and Tesseract. OCR is off by default; rotated pages and additional image text on otherwise healthy text pages are not automatically recovered. Physical-book dewarping is not implemented.
+- **Column reading order is wrong on a minority of two-column pages.** The template is misread and the columns interleave line by line, which welds sentences together, invents words where a hyphen is then joined across the break, and runs reference-list entries into the body. Two targeted repairs were written and measured over the 376-document library sweep -- anchoring the template on whichever column start matches the page's left margin, and ignoring gutter-crossing lines when measuring a column's right edge. They fixed a handful of pages and made more documents worse (mean word precision unchanged, recall 0.973 to 0.969, better on 42 documents and worse on 65), so they were reverted. The current branch also integrates a different modal-column adjustment validated on the smaller development sample; its effect on that larger sweep has not been remeasured.
 - **Output is named after the input file**, because that is the only name the converter is given -- a library of `p517.pdf` yields `p517.md`, even though its front matter says `title: "Accessible Voting: One Machine, One Vote for Everyone"`. `tools/name_by_title.py` renames a directory of output from that front matter.
 - **Undecodable text layers are warned about, not repaired.** Three signals, each calibrated against the 1,566-book library so the threshold sits in open space between the worst honest document and the best broken one: under 30% letters (honest worst 54%), over 15% of words vowel-less (honest worst 8%), over 6% of letters inside 24-character run-ons where the encoding dropped the space (honest worst 1.7%). That catches six of the library's seven broken documents and fires on none of the other 1,473. A cipher into the *accented-letter* range still reads as letters and words and slips through, and no attempt is made to solve the substitution — OCR is the answer, and the warning says so. The conversion still runs, because the caller may want the layout anyway.
 - **Structured input coverage** is what four generated fixtures exercise: no real-world EPUB with images, nested lists in footnotes, or a multi-level nav has been run yet; DOCX tracked changes, comments and text boxes are ignored.
@@ -680,6 +806,11 @@ tools/sync_structured.py    # copies structured.py into the merged build; --chec
 tools/name_by_title.py      # renames converted Markdown after the title in its front matter
 tests/test_smoke.py         # conversion smoke tests
 tests/test_errors.py        # bad-input diagnostics
+tests/test_pdf_quality.py   # adaptive PDF layout and text quality
+tests/test_research_pipeline.py # structure, provenance, OCR and benchmark tests
+tools/benchmark.py         # manifest-driven quality and performance checks
+tools/compare_converters.py # repeated local MarkItDown comparisons
+benchmarks/                # manifest documentation and comparison results
 tests/test_regressions.py   # one test per fixed defect + build-integrity check
 examples/minibook-epub3.md  # sample output from the pandoc EPUB 3 mini-book fixture
 requirements.txt            # pymupdf
