@@ -7,7 +7,7 @@
 <p align="center">Turn books, research papers, and everyday documents into readable, inspectable Markdown.</p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-10b981" alt="Version 0.1.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-10b981" alt="Version 0.2.0"></a>
   <a href="https://github.com/machinarii/pdf2md/actions/workflows/ci.yml"><img src="https://github.com/machinarii/pdf2md/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&amp;logoColor=white" alt="Python 3.10 or newer"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
@@ -27,7 +27,7 @@ pdf2md turns PDF, EPUB, and DOCX files into Markdown using typography and page
 layout to recover structure. It runs locally with PyMuPDF; no API key is needed.
 
 The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
-an explicit document tree. Optional Tesseract OCR repairs selected regions.
+an explicit document tree. Optional Tesseract OCR repairs selected regions, including rotated pages.
 EPUB and DOCX use their own structural readers; LibreOffice handles older office
 formats. The converter ships as one Python file with no required model download.
 
@@ -63,7 +63,7 @@ On Windows, activate with `.venv\Scripts\activate` instead.
 python3 pdf2md_all.py paper.pdf --no-toc -o paper.md
 python3 pdf2md_all.py book.epub -o book.md
 python3 pdf2md_all.py document.docx -o document.md
-python3 pdf2md_all.py --version  # pdf2md 0.1.0
+python3 pdf2md_all.py --version  # pdf2md 0.2.0
 ```
 
 Output includes inferred headings, reflowed text, YAML metadata, and a table of
@@ -145,7 +145,7 @@ An excerpt from our original book fixture, converted by both tools without
 postprocessing. pdf2md rejoins wrapped words and preserves paragraph continuity.
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>The archive connects readers with an inter-<br>
 national community. Each record includes infor-<br>
 mation about the source and its publication.<br>
@@ -177,7 +177,7 @@ shows the complete body from both outputs, including **1 Introduction** and
 
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>1 Introduction<br>
 <br>
 2 Preservation<br>
@@ -211,7 +211,7 @@ This small example illustrates headings<br>
 and paragraph reflow on a simple layout.<br>
 It is a demonstration, not a benchmark<br>
 of every document or extraction method.</code></td>
-<td valign="top"><code>1 Introduction<br>
+<td valign="top"><code># 1 Introduction<br>
 <br>
 A useful archive preserves the structure of a document as well as its words. Short lines on a printed page should become one readable paragraph in Markdown.<br>
 <br>
@@ -219,7 +219,7 @@ Research papers often place two columns on the same page. Reading order matters:
 <br>
 A heading should remain a heading. Its size and weight provide evidence that separates it from ordinary prose. The original page remains the reference.<br>
 <br>
-2 Preservation<br>
+# 2 Preservation<br>
 <br>
 Clear text is easier to search and review. Keep the source file so each conversion can be checked against the printed page. Record the tool version with the output.<br>
 <br>
@@ -230,8 +230,8 @@ This small example illustrates headings and paragraph reflow on a simple layout.
 
 Here, MarkItDown places the right-column heading before the left-column text,
 and alternates paragraphs between columns. pdf2md keeps the left column together
-and joins its printed lines into paragraphs. **Both miss the two section heading
-tags in this demo**; pdf2md does recover the document title as an H1. Neither converter drops the Preservation section: pdf2md places it after
+and joins its printed lines into paragraphs. **pdf2md 0.2.0 recovers both numbered section headings**; MarkItDown retains
+them as plain text. The earlier pdf2md 0.1.0 missed those heading tags. Neither converter drops the Preservation section: pdf2md places it after
 the complete Introduction, following the source columns. The files below also
 include each converter's title block and any generated metadata.
 
@@ -246,7 +246,7 @@ include each converter's title block and any generated metadata.
 <summary><strong>Keep real hyphens: self-supervised stays self-supervised</strong></summary>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>A self-supervised method can identify patterns.<br>
 Readers can inspect the training data. This self-<br>
 supervised example also shows why every printed<br>
@@ -263,7 +263,7 @@ hyphen while removing its line break.
 <summary><strong>Page boundaries: remove running headers and page numbers; restore heading tags</strong></summary>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>Page furniture belongs outside the body text.<br>
 A repeated running header provides navigation on<br>
 paper, but becomes distracting inside an archive.<br>
@@ -304,10 +304,29 @@ python3 pdf2md_all.py scan.pdf -o scan.md --ocr auto --ocr-language eng \
   --artifacts artifacts/scan
 ```
 
-OCR is optional and off by default. It targets empty image pages and damaged
-text lines, records repair decisions, and leaves rejected candidates unchanged.
+OCR is optional and off by default. It targets empty image pages, damaged text
+lines, and separate images on mixed pages, including PDF page rotations. It records
+repair decisions and leaves rejected candidates unchanged. Regions overlapping
+native text are skipped to avoid duplicating or replacing that text.
 `--artifacts` also works without OCR to export the document tree and source evidence.
 See [usage, OCR limits, and artifact details](docs/usage.md).
+
+### Visual context for charts and images
+
+Keep figures as images and optionally use a locally served Ollama vision model to
+transcribe readable structure or describe axes, labels, trends, and relationships:
+
+```bash
+python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
+  --figure-vlm qwen2.5vl:7b --artifacts artifacts/paper
+```
+
+This requires a running Ollama server and an installed vision-capable model.
+Descriptions are marked **AI-generated**, linked to the crop, and recorded in
+`figures/visuals.json` with model, page, bounding box, and image hash. Model failure
+keeps the image and extracted labels. Review descriptions against the source;
+these are contextual aids, not verified measurements or equation transcription.
+[Visual context details](docs/usage.md#visual-context-for-rag)
 
 ## Cleaner input for GraphRAG
 
@@ -338,8 +357,8 @@ formatting audit, or a GraphRAG speed measurement.
 ## Known gaps
 
 - Complex columns, tables, heading styles, and footnotes can still be misclassified.
-- Equations are not reconstructed into faithful LaTeX; language heuristics mainly target English and Latin scripts.
-- OCR can misread text. Rotated pages and extra image text on otherwise healthy text pages are not automatically OCRed; physical-book dewarping is not implemented.
+- Equations are not reconstructed into faithful LaTeX. Unicode heading checks and Chinese/Japanese line joining are supported, but document-regime vocabulary remains mainly English; broad multilingual accuracy is unmeasured.
+- OCR can misread text. Images overlapping native text are skipped; arbitrary text orientation, camera skew, and physical-book dewarping remain unsupported. Visual descriptions require review.
 - Layout learning applies within a document; there is no cross-document training.
 
 Inspect important outputs against their source. See [architecture and limitations](docs/architecture.md).

@@ -12,7 +12,7 @@ CI verifies that the two copies agree.
 1. **Extract.** Read text spans with fonts, sizes, weights, and bounding boxes.
    Normalize page rotation and infer page-local column reading order.
 2. **Repair when requested.** Optional local Tesseract OCR handles selected damaged
-   lines and empty image pages. Confidence and text-preservation gates accept or
+   lines and empty image pages and separate image regions, including PDF rotations. Confidence and text-preservation gates accept or
    reject candidates; decisions are recorded.
 3. **Identify and profile.** Infer book, paper, deck, or document from metadata,
    geometry, typography, and structural markers. Learn body styles, repeated
@@ -44,7 +44,7 @@ python3 tools/sync_structured.py --check
 - Sparse numeric tables and multi-row headers remain difficult. Nested tables are
   flattened; their containment cannot be represented as nested Markdown tables.
 - Equations pass through as approximate text rather than reconstructed LaTeX.
-- Heading, name, and regime heuristics primarily target English/Latin text.
+- Heading checks accept Unicode letters, and Chinese/Japanese line joining avoids artificial spaces. Name and regime heuristics still primarily target English/Latin text.
 - Footnote labels may be page-qualified rather than preserve printed numbering.
 - A coverless book can fall back to the filename even when PDF title metadata exists.
 - Undecodable font encodings can produce plausible-looking nonsense. Warnings
