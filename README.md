@@ -43,6 +43,7 @@ formats. The converter ships as one Python file with no required model download.
 | 🧭 **Adaptive layout** | Infer headings and column reading order for books, papers, and reports. |
 | 🔍 **Source traceability** | Inspect classified text, page locations, and optional OCR repair decisions. |
 | 🕸️ **GraphRAG preparation** | Give downstream chunking and relationship extraction more coherent source text. |
+| 🤖 **Agent-ready Markdown** | Clean, structured text supports selective reading that can reduce context tokens. |
 
 ## Quick start
 
@@ -337,6 +338,20 @@ chunker. Removing repeated page furniture may reduce unnecessary indexing tokens
 These are expected benefits, not measured GraphRAG improvements. pdf2md prepares
 text; your ingestion pipeline must map its structure and provenance into the graph.
 See the [GraphRAG integration guide](docs/graphrag.md) for workflow and evaluation.
+
+### Leaner context for agents and skills
+
+Clean Markdown can reduce agent token usage by removing repeated headers and
+footers and making sections easy to retrieve independently. Loading only the
+relevant section keeps less text in context than loading an entire book.
+
+Workflows such as [book-to-skill](https://github.com/virgiliojr94/book-to-skill)
+take this further: they distill source material into a skill index and chapter
+files that agents load on demand. pdf2md provides structured Markdown for this
+kind of workflow; it does not itself generate skills or integrate with that tool.
+
+Savings depend on cleanup, selective loading, and the model's tokenizer—not the
+`.md` extension alone. pdf2md has not benchmarked agent token savings.
 
 ## Performance
 
