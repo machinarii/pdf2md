@@ -46,7 +46,7 @@ formats. The converter ships as one Python file with no required model download.
 
 ## Framework
 
-The introduction shows the conversion flow. This section explains the layers,
+This section explains the layers,
 structural decisions, and verification techniques behind it.
 
 ### Pipeline layers
