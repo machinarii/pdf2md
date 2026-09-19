@@ -75,6 +75,40 @@ flowchart LR
     E --> F[Markdown and optional audit artifacts]
 ```
 
+### Pipeline layers
+
+The layers below describe each responsibility. The flowchart above shows execution
+order: extracted text and geometry provide the evidence for document identification.
+
+```text
+IDENTIFY   Book / paper / deck / document
+           Combine metadata, geometry, text density, and document markers;
+           record evidence and allow an explicit document-type override.
+
+EXTRACT    Text spans + typography + geometry
+           Read fonts, sizes, weights, and bounding boxes;
+           normalize page rotation; infer page-local column reading order;
+           optionally OCR damaged lines and empty image pages with auditing.
+
+PROFILE    Learn the current document's patterns
+           Body style     → dominant font and size by character count
+           Running heads  → repeated margin text across distinct pages
+           Heading styles → typography, frequency, spacing, and text shape
+           OCR text layer → synthetic-font evidence and relative size tiers
+
+CLASSIFY   Assign content roles and document regimes
+           Heading | paragraph | caption | code | table | figure | footnote
+           Apply genre-specific rules and distinguish front matter,
+           body, references, glossary, notes, and index;
+           merge caption wraps and associate footnote anchors.
+
+ASSEMBLE   Structure → readable Markdown
+           Merge wrapped headings → validate outline hierarchy
+           → construct section / paragraph / list relationships
+           → reflow text across lines, pages, and columns
+           → render content + YAML metadata + optional grouped contents.
+```
+
 ### Methodology and principles
 
 1. **Use source evidence.** Font, size, weight, position, and surrounding text
