@@ -351,7 +351,26 @@ files that agents load on demand. pdf2md provides structured Markdown for this
 kind of workflow; it does not itself generate skills or integrate with that tool.
 
 Savings depend on cleanup, selective loading, and the model's tokenizer—not the
-`.md` extension alone. pdf2md has not benchmarked agent token savings.
+`.md` extension alone. Local token counts across **eight PDFs, 635 pages**, using
+`o200k_base`:
+
+| Representation | Tokens across the sample | Savings with clean Markdown |
+|---|---:|---:|
+| Full PDF input (text + page images) | Model-dependent; see estimate below | Not measured |
+| Raw PDF text (PyMuPDF, no cleanup) | 515,058 | 10.7% |
+| Unclean Markdown (MarkItDown 0.1.7) | 576,795 | 20.3% |
+| Clean Markdown (pdf2md 0.2.0) | **459,856** | — |
+
+For full PDFs, [OpenAI's file-input processing](https://developers.openai.com/api/docs/guides/file-inputs)
+includes text and page images. Using our raw-text count as a proxy and **assuming
+500 image tokens/page** gives **832,558 tokens**, or **44.8% fewer** with clean
+Markdown. This is an illustration, not measured API usage; actual extraction and
+image costs depend on the model and detail settings. Markdown alone omits visual
+information unless relevant figures are supplied separately.
+
+These are development-sample counts, not end-to-end agent benchmarks. One report
+used 1.8% more tokens than MarkItDown; fewer tokens alone do not establish fidelity.
+[Per-file counts, methodology, and limitations](benchmarks/token-usage.md)
 
 ## Performance
 
