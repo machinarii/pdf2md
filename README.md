@@ -90,6 +90,81 @@ literal excerpts; the full outputs below retain all content from the example.
 [Full MarkItDown output](examples/comparison/markitdown.md) ·
 [Source generator and reproduction](examples/comparison/README.md)
 
+### More cleanup examples
+
+Three more contrasts from the same original three-page book fixture. These are
+selected demonstrations, not a representative failure rate. Both converters use
+the same settings as above; excerpts are copied from the complete outputs.
+
+<details open>
+<summary><strong>Broken words: inter- / national, infor- / mation, docu- / mentation</strong></summary>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>The archive connects readers with an inter-<br>
+national community. Each record includes infor-<br>
+mation about the source and its publication.<br>
+The team records each decision through careful docu-<br>
+mentation helps later readers verify the result.</code></td>
+<td valign="top"><code>The archive connects readers with an international community. Each record includes information about the source and its publication. The team records each decision through careful documentation helps later readers verify the result.</code></td></tr>
+</table>
+
+pdf2md rejoins the split words and reconstructs the paragraph.
+
+</details>
+
+<details>
+<summary><strong>Keep real hyphens: self-supervised stays self-supervised</strong></summary>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>A self-supervised method can identify patterns.<br>
+Readers can inspect the training data. This self-<br>
+supervised example also shows why every printed<br>
+hyphen should not be removed in the same way.</code></td>
+<td valign="top"><code>A self-supervised method can identify patterns. Readers can inspect the training data. This self-supervised example also shows why every printed hyphen should not be removed in the same way.</code></td></tr>
+</table>
+
+pdf2md uses the spelling elsewhere in the document to preserve the compound's
+hyphen while removing its line break.
+
+</details>
+
+<details>
+<summary><strong>Page boundaries: remove running headers and page numbers; restore heading tags</strong></summary>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>Page furniture belongs outside the body text.<br>
+A repeated running header provides navigation on<br>
+paper, but becomes distracting inside an archive.<br>
+Page numbers should not interrupt a paragraph.<br>
+<br>
+1<br>
+<br>
+␌FIELD NOTES ON DOCUMENT ARCHIVES<br>
+<br>
+Chapter 2: Checking</code></td>
+<td valign="top"><code>Page furniture belongs outside the body text. A repeated running header provides navigation on paper, but becomes distracting inside an archive. Page numbers should not interrupt a paragraph.<br>
+<br>
+# Chapter 2: Checking</code></td></tr>
+</table>
+
+MarkItDown retains the page number and repeated running header between chapters.
+pdf2md removes them and emits `# Chapter 2: Checking`. The visible `␌` represents
+MarkItDown's form-feed character; that is the only display substitution here.
+
+</details>
+
+[Book source preview](examples/comparison/book/source.png) ·
+[Complete pdf2md output](examples/comparison/book/pdf2md.md) ·
+[Complete MarkItDown output](examples/comparison/book/markitdown.md) ·
+[Reproduce these examples](examples/comparison/README.md#book-cleanup-gallery)
+
+The full pdf2md output also shows a limitation: without a cover, its document title
+falls back to the filename (`source`), despite the PDF metadata. The chapter
+headings are recovered. No title override or output editing was used.
+
 For a broader view, the earlier eight-file development comparison measured about
 7.1× faster conversion and 42/42 selected checks versus 20/42. These are
 sample-specific results from before the later library-sweep integration, not a
