@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install OCR test dependency
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+
       - name: Byte-compile
         run: python -m py_compile pdf2md_all.py structured.py
 

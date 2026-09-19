@@ -22,6 +22,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 import zipfile
 from collections import Counter, defaultdict
@@ -874,7 +875,7 @@ def _column_template(body_all, page_w):
     gutters: list[float] = []
     if len(narrow_all) >= 12:
         hist = Counter(int(l.x0 // 5) * 5 for l in narrow_all)
-        floor = max(3, 0.03 * len(narrow_all))
+        floor = max(3, 0.08 * len(narrow_all))
         peaks = sorted(b for b, n in hist.items() if n >= floor
                        and n >= hist.get(b - 5, 0) and n >= hist.get(b + 5, 0))
         merged: list[float] = []
@@ -882,15 +883,11 @@ def _column_template(body_all, page_w):
             if merged and b - merged[-1] <= 25:
                 continue
             merged.append(b)
-        # Anchoring on merged[0], and measuring a column's right edge from
-        # every line that starts in it, both misread some two-column pages --
-        # see "Known gaps". Two targeted repairs (anchor on whichever start
-        # matches the page's left margin; ignore lines that cross the gutter
-        # when measuring the edge) were tried and measured over the 376-file
-        # library: they fixed a handful of pages and made more documents
-        # worse, so they are not here.
-        if merged and abs(merged[0] - doc_left) <= 12:
-            merged[0] = doc_left
+        if merged:
+            # The right column can contain more text, especially beside a figure.
+            # The modal start is not necessarily the leftmost column.
+            if abs(merged[0] - doc_left) <= 12:
+                merged[0] = doc_left
             # a start must lie beyond the previous column's right edge
             kept, edges = [], []
             for st in merged:
@@ -1145,7 +1142,7 @@ def promote_roman_sections(lines, prof) -> int:
     stray 'V. Smith' in a bibliography cannot start one. Once the spine is
     known, 'A. Method' between two of its members is a subsection under it.
     """
-    spine, folded = [], []
+    spine = []
     for i, l in enumerate(lines):
         if l.kind not in ("body", "heading"):
             continue
@@ -2572,10 +2569,14 @@ def escape_md(text: str) -> str:
     return MD_LEAD_RE.sub(esc, text)
 
 
-def repair_span(text: str, font_name: str) -> str:
+def repair_span(text: str, font_name: str, *, preserve_private: bool = False) -> str:
     """Per-span repair. Font-aware, so it must run before lines are joined."""
     if LAYOUT_ONLY_FONT_RE.search(font_name):
         return " "
+    # Symbol fonts commonly expose the bullet through a private-use slot.
+    # This font-specific encoding repair is safer than OCR of a one-glyph token.
+    if font_name.split("+")[-1] in ("Symbol", "SymbolMT"):
+        text = text.replace("\uf0b7", "•")
     cls = font_class(font_name)
     table = GLYPH_BY_CLASS.get(cls, {})
     out = []
@@ -2590,6 +2591,8 @@ def repair_span(text: str, font_name: str) -> str:
     s = CONTROL_RE.sub("", s)
     s = ZERO_WIDTH_RE.sub("", s)
     s = ODD_SPACE_RE.sub(" ", s)
+    if preserve_private:
+        return s
     # A private-use glyph that leads the line is the line's bullet, and
     # becomes a real one so the list detector can see it; the rest are
     # dropped, because printing a glyph whose meaning the PDF never recorded
@@ -2653,6 +2656,7 @@ class Line:
     style: tuple = ()            # (dominant_font, rounded_size)
     kind: str = "body"           # body|heading|caption|furniture|code|footnote
     level: int = 0               # heading level when kind == heading
+    sources: list = field(default_factory=list)
 
     @property
     def indent(self) -> float:
@@ -2699,6 +2703,8 @@ class Profile:
     body_left: float = 0.0
     adaptive_styles: set = field(default_factory=set)
     learning_evidence: list = field(default_factory=list)
+    document_tree: list = field(default_factory=list)
+    repairs: list = field(default_factory=list)
 
 
 # ===========================================================================
@@ -2708,12 +2714,12 @@ class Profile:
 ROTATED_TEXT: list[str] = []
 
 
-def extract_lines(doc, page_range) -> list[Line]:
+def extract_lines(doc, page_range, *, preserve_private: bool = False) -> list[Line]:
     ROTATED_TEXT.clear()
     lines: list[Line] = []
     for pno in page_range:
         page = doc[pno]
-        d = page.get_text("dict")
+        d = page.get_text("dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
         # get_text() reports each line's "dir" and "bbox" in *unrotated* page
         # space, while page.rect -- the page as a reader sees it, and the frame
         # every later stage measures against -- is the rotated one. On a page
@@ -2754,7 +2760,7 @@ def extract_lines(doc, page_range) -> list[Line]:
                     base = s["font"].split("+")[-1]
                     fonts.append(base)
                     sbox = to_page(s["bbox"])
-                    txt = repair_span(s["text"], s["font"])
+                    txt = repair_span(s["text"], s["font"], preserve_private=preserve_private)
                     # TeX writes each font run as its own span with no space
                     # character between them, so a naive "".join() welds words
                     # together ("First-visitMCprediction"). Reinstate the space
@@ -2779,17 +2785,24 @@ def extract_lines(doc, page_range) -> list[Line]:
                 for s in spans:
                     weight[s["font"].split("+")[-1]] += len(s["text"].strip())
                 dom = weight.most_common(1)[0][0]
+                dom_flags = 0
+                for span in spans:
+                    if span["font"].split("+")[-1] == dom:
+                        dom_flags |= span.get("flags", 0)
                 size = max(s["size"] for s in spans)
                 x0, y0, x1, y1 = to_page(ln["bbox"])
                 lines.append(Line(
                     page=pno, text=text, x0=x0, y0=y0, x1=x1, y1=y1,
                     size=size, fonts=tuple(sorted(set(fonts))),
-                    is_bold=bool(re.search(r"(BX|Bold|Medi|Demi|Semi[Bb]old|Heavy|Black|"
+                    is_bold=bool(dom_flags & 16) or bool(re.search(r"(BX|Bold|Medi|Demi|Semi[Bb]old|Heavy|Black|"
                                            r"CMMIB|CMBSY|-B\b|,B\b|Bd\b|\bBold)", dom)),
-                    is_italic=bool(re.search(r"(TI|Italic|Oblique)", dom)),
-                    is_mono=bool(re.search(r"(CMTT|Mono|Courier)", dom)),
+                    is_italic=bool(dom_flags & 2) or bool(re.search(r"(TI|Italic|Oblique)", dom)),
+                    is_mono=bool(dom_flags & 8) or bool(re.search(r"(CMTT|Mono|Courier)", dom)),
                     math_ratio=(math_chars / total_chars) if total_chars else 0.0,
                     style=(dom, round(size, 1)),
+                    sources=[{"id": f"p{pno+1}-l{len(lines)}", "page": pno+1,
+                              "bbox": list(to_page(ln["bbox"])), "text": "".join(s["text"] for s in spans),
+                              "method": "text-layer"}],
                 ))
     # Strict reading order. LaTeX emits a section number and its title as two
     # separate blocks on the same baseline, and block order between them is not
@@ -2929,10 +2942,16 @@ def band_ocr_styles(lines: list[Line]) -> None:
     (12.7, 12.8 ... 14.8 all body text) that shatters into ~30 bogus 'heading
     levels' if each 0.1pt step is its own style.
     """
-    weighted = []
+    weights = Counter()
     for ln in lines:
-        weighted += [ln.size] * max(1, len(ln.text))
-    med = statistics.median(weighted) if weighted else 10.0
+        weights[ln.size] += max(1, len(ln.text))
+    total = sum(weights.values())
+    targets = ((total-1)//2, total//2)
+    seen, middle = 0, []
+    for size, weight in sorted(weights.items()):
+        middle.extend(size for target in targets if seen <= target < seen+weight)
+        seen += weight
+    med = statistics.mean(middle) if middle else 10.0
     cuts = find_size_tiers([ln.size / med for ln in lines]) if med else []
     for ln in lines:
         r = ln.size / med if med else 1.0
@@ -3452,11 +3471,12 @@ def fold_caption_wraps(lines: list[Line], prof: Profile) -> None:
         j = i + 1
         while j < len(lines) and j - i <= 3:
             b = lines[j]
-            close = (b.page == a.page and not b.isolated
+            close = (b.page == a.page and b.col == a.col and not b.isolated
                      and 0 < b.y0 - a.y1 < prof.line_pitch)
             if b.kind == "body" and close and \
                     (b.text[:1].islower() or not TAIL_OK_RE.search(a.text)):
                 a.text = a.text.rstrip() + " " + b.text.strip()
+                a.sources = a.sources + b.sources
                 a.y1 = b.y1
                 b.kind = "consumed"
                 j += 1
@@ -3809,6 +3829,7 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
                         and nxt.kind == "heading")
             if same_row and NUM_HEADING_RE.match(cur.text.strip()):
                 cur.text = f"{cur.text.strip().rstrip('.')} {nxt.text.strip()}"
+                cur.sources = cur.sources + nxt.sources
                 cur.level = min(cur.level, nxt.level)
                 cur.y1 = max(cur.y1, nxt.y1)
                 cur.style = nxt.style      # so wrapped title lines match
@@ -3820,6 +3841,7 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
             if same_row and nxt.style == cur.style and nxt.x0 > cur.x1 - 2:
                 # a labelled heading set as two spans: "Example 6.2" | "Random Walk"
                 cur.text = f"{cur.text.strip()} {nxt.text.strip()}"
+                cur.sources = cur.sources + nxt.sources
                 cur.x1 = nxt.x1
                 lines[i + 1] = cur
                 i += 1
@@ -3831,6 +3853,7 @@ def merge_split_headings(lines: list[Line]) -> list[Line]:
             if stacked and re.match(r"^(Chapter|Part|Appendix)\s+[\dIVX]+$",
                                     cur.text.strip(), re.I):
                 cur.text = f"{cur.text.strip()}: {nxt.text.strip()}"
+                cur.sources = cur.sources + nxt.sources
                 cur.level = 1
                 cur.y1 = nxt.y1
                 cur.style = nxt.style      # so wrapped title lines match
@@ -3889,7 +3912,7 @@ def _absorb_wraps(lines: list[Line], i: int, head: Line) -> int:
     break; take that too."""
     while i < len(lines):
         nxt = lines[i]
-        same_page = (nxt.page == head.page
+        same_page = (nxt.page == head.page and nxt.col == head.col
                      and -2 < nxt.y0 - head.y1 < max(nxt.size * 0.9, _PITCH * 0.9))
         cross_page = (nxt.page == head.page + 1
                       and DANGLING_RE.search(head.text.strip())
@@ -3899,6 +3922,7 @@ def _absorb_wraps(lines: list[Line], i: int, head: Line) -> int:
                 and not NUM_HEADING_RE.match(nxt.text.strip())):
             joiner = "" if head.text.rstrip().endswith("-") else " "
             head.text = head.text.rstrip() + joiner + nxt.text.strip()
+            head.sources = head.sources + nxt.sources
             head.y1 = nxt.y1
             head.page = nxt.page
             i += 1
@@ -3980,6 +4004,250 @@ def slugify(text: str) -> str:
     return re.sub(r"[\s_]+", "-", s).strip("-")
 
 
+# Research-inspired structure, selective recognition and audit trail.
+@dataclass
+class DocumentNode:
+    id: str
+    kind: str
+    level: int = 0
+    parent: str | None = None
+    children: list = field(default_factory=list)
+    lines: list = field(default_factory=list, repr=False)
+
+
+def paragraph_break(prev, ln, prof):
+    if prev is None or prev.kind != "body" or ln.kind != "body":
+        return True
+    continued = looks_continued(prev.text, ln.text)
+    margin = ln.col_left or prof.body_left
+    return not continued and (ln.page != prev.page or ln.col != prev.col
+                              or ln.isolated or ln.x0 > margin + 4)
+
+
+def construct_document(lines, prof):
+    """Construct section parents and paragraph blocks in established reading order.
+
+    Nodes hold the same classified lines consumed by the renderer. Geometry is
+    retained per source line, including cross-page paragraphs and merged headings.
+    """
+    root = DocumentNode("document", "document")
+    nodes = [root]
+    sections = [root]
+    list_stack = []
+    previous = None
+    for ln in lines:
+        if ln.kind == "heading":
+            level = max(1, min(6, ln.level))
+            while len(sections) > 1 and sections[-1].level >= level:
+                sections.pop()
+            parent = sections[-1]
+            node = DocumentNode(f"b{len(nodes)}", "section", level, parent.id, lines=[ln])
+            parent.children.append(node.id)
+            nodes.append(node)
+            sections.append(node)
+            list_stack = []
+        elif (ln.kind == "body" and previous is not None
+              and nodes[-1].kind == "paragraph" and not paragraph_break(previous, ln, prof)):
+            nodes[-1].lines.append(ln)
+        elif ln.kind in ("list_cont", "ref_cont", "note_cont", "footnote_cont") and nodes[-1].kind in (
+                "list_item", "ref_entry", "note_entry", "footnote"):
+            nodes[-1].lines.append(ln)
+        else:
+            parent = sections[-1]
+            if ln.kind == "list_item":
+                while list_stack and list_stack[-1].level >= ln.level:
+                    list_stack.pop()
+                if list_stack:
+                    parent = list_stack[-1]
+            else:
+                list_stack = []
+            node = DocumentNode(f"b{len(nodes)}", "paragraph" if ln.kind == "body" else ln.kind,
+                                ln.level, parent.id, lines=[ln])
+            parent.children.append(node.id)
+            nodes.append(node)
+            if ln.kind == "list_item":
+                list_stack.append(node)
+        previous = ln
+    return nodes
+
+
+def document_lines(nodes):
+    """Traverse the explicit tree, preserving each node's source order."""
+    by_id = {node.id: node for node in nodes}
+    pending = [nodes[0].id]
+    while pending:
+        node = by_id[pending.pop()]
+        yield from node.lines
+        pending.extend(reversed(node.children))
+
+
+def document_payload(nodes):
+    return [{"id": n.id, "kind": n.kind, "level": n.level, "parent": n.parent,
+             "children": n.children, "text": "\n".join(l.text for l in n.lines),
+             "sources": [s for l in n.lines for s in l.sources]}
+            for n in nodes]
+
+
+def damaged_characters(text):
+    return sum(c == "\ufffd" or unicodedata.category(c) == "Co" for c in text)
+
+
+def verify_repair(original, candidate, confidence):
+    """Conservative gate, not proof of correctness. Never rewrite healthy text.
+
+    Preserve intact words (case, count, order) and numbers. A damaged token can
+    change, but a candidate cannot replace an unrelated sentence or expand it
+    arbitrarily. OCR confidence is only one signal, not a calibrated probability.
+    """
+    if not candidate.strip() or damaged_characters(candidate):
+        return False, "empty or damaged candidate"
+    if confidence < 80:
+        return False, "low OCR confidence"
+    if not original.strip():
+        return True, "recognized previously missing text; requires visual review"
+    if not damaged_characters(original):
+        return False, "original has no detectable character damage"
+    if not 0.5 <= len(candidate) / max(1, len(original)) <= 2:
+        return False, "unexpected length change"
+    original_tokens = re.findall(r"\S+", original)
+    if any(damaged_characters(t) and not any(c.isalnum() for c in t) for t in original_tokens):
+        return False, "isolated damaged symbol cannot be verified as a word"
+    intact = [t for t in original_tokens if not damaged_characters(t)]
+    candidate_tokens = re.findall(r"\S+", candidate)
+    cursor = 0
+    for token in intact:
+        try:
+            cursor = candidate_tokens.index(token, cursor) + 1
+        except ValueError:
+            return False, "intact token removed, changed or reordered"
+    if re.findall(r"\d+(?:[.,]\d+)*", original) != re.findall(r"\d+(?:[.,]\d+)*", candidate):
+        return False, "numbers changed"
+    return True, "character damage reduced; intact tokens and numbers preserved"
+
+
+def tesseract_region(page, bbox, language="eng", dpi=250, line_mode=False):
+    """Recognize one crop. TSV boxes are mapped back to unrotated PDF points."""
+    import csv
+    import io
+    clip = pymupdf.Rect(bbox) & page.rect
+    if clip.is_empty:
+        return [], 0.0
+    # Bound memory for unusually large scanned pages.
+    scale = min(dpi / 72, (12_000_000 / max(1, clip.width * clip.height)) ** 0.5)
+    with tempfile.TemporaryDirectory(prefix="pdf2md-ocr-") as tmp:
+        image_path = Path(tmp) / "region.png"
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), clip=clip,
+                              colorspace=pymupdf.csRGB, alpha=False)
+        pix.save(image_path)
+        result = subprocess.run(["tesseract", str(image_path), "stdout", "-l", language,
+                                 "--psm", "7" if line_mode else "3", "tsv"],
+                                capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip()[-1000:])
+        groups = {}
+        confidences = []
+        for row in csv.DictReader(io.StringIO(result.stdout), delimiter="\t", quoting=csv.QUOTE_NONE):
+            if row.get("level") != "5" or not row.get("text", "").strip():
+                continue
+            key = tuple(row[k] for k in ("block_num", "par_num", "line_num"))
+            x, y, w, h = (float(row[k]) for k in ("left", "top", "width", "height"))
+            box = [(pix.x + x) / scale, (pix.y + y) / scale,
+                   (pix.x + x + w) / scale, (pix.y + y + h) / scale]
+            groups.setdefault(key, []).append((row["text"], box))
+            confidences.extend([float(row["conf"])] * len(row["text"]))
+        output = []
+        for words in groups.values():
+            boxes = [w[1] for w in words]
+            output.append({"text": " ".join(w[0] for w in words),
+                           "bbox": [min(b[0] for b in boxes), min(b[1] for b in boxes),
+                                    max(b[2] for b in boxes), max(b[3] for b in boxes)]})
+        return output, statistics.mean(confidences) if confidences else 0.0
+
+
+def selective_ocr(doc, lines, pages, language="eng", backend=None):
+    """Route empty image pages and damaged lines only. Failed repairs roll back.
+
+    No spell-check or language-model rewriting is performed. Blank pages are
+    skipped. A page with healthy text plus an unrecognized image is reported by
+    the audit but not automatically treated as missing prose.
+    """
+    backend = backend or tesseract_region
+    audit = []
+    by_page = defaultdict(list)
+    for ln in lines:
+        by_page[ln.page].append(ln)
+    for pno in pages:
+        page = doc[pno]
+        pl = by_page[pno]
+        # Coordinate mapping for rotated pages needs separate handling. Preserve
+        # original text and make this explicit rather than crop the wrong region.
+        if page.rotation:
+            audit.append({"page": pno + 1, "status": "skipped", "reason": "rotated page"})
+            continue
+        tasks = [(l, [l.x0-2, l.y0-2, l.x1+2, l.y1+2]) for l in pl
+                 if damaged_characters(l.text) and not l.is_mono and l.math_ratio < 0.2]
+        if not pl and page.get_images():
+            tasks = [(None, list(page.rect))]
+        for original_line, bbox in tasks:
+            original = original_line.text if original_line else ""
+            record = {"page": pno + 1, "bbox": bbox, "original": original,
+                      "backend": "tesseract", "language": language}
+            if original and any(damaged_characters(t) and not any(c.isalnum() for c in t)
+                                for t in original.split()):
+                record.update(status="skipped", reason="isolated damaged symbol; preserve original")
+                audit.append(record)
+                continue
+            try:
+                recognized, confidence = backend(page, bbox, language=language,
+                                                  line_mode=original_line is not None)
+                candidate = " ".join(r["text"] for r in recognized)
+                accepted, reason = verify_repair(original, candidate, confidence)
+                record.update(candidate=candidate, confidence=confidence, reason=reason,
+                              status="accepted" if accepted else "rejected")
+                if accepted and original_line is not None:
+                    original_line.text = candidate
+                elif accepted:
+                    for i, rec in enumerate(recognized):
+                        x0, y0, x1, y1 = rec["bbox"]
+                        size = max(1, (y1-y0) * 0.8)
+                        lines.append(Line(pno, rec["text"], x0, y0, x1, y1, size,
+                                          ("GlyphLessFont",), False, False, False, 0,
+                                          style=("GlyphLessFont", round(size, 1)),
+                                          sources=[{"id": f"p{pno+1}-ocr{i}", "page": pno+1,
+                                                    "bbox": rec["bbox"], "text": rec["text"],
+                                                    "method": "tesseract"}]))
+            except (OSError, RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
+                record.update(status="rejected", reason=f"OCR failed: {e}")
+            audit.append(record)
+    reorder_columns(lines, {p: doc[p].rect.width for p in pages})
+    return audit
+
+
+def write_quality_artifacts(directory, src, md, prof, pages, elapsed):
+    """Keep source content separate from cleaned output and transformation logs."""
+    import hashlib
+    directory.mkdir(parents=True, exist_ok=True)
+    def digest(path):
+        h = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024*1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    payload = {"schema_version": 1, "source": str(src.resolve()), "source_sha256": digest(src),
+               "markdown_sha256": hashlib.sha256(md.encode("utf-8")).hexdigest(),
+               "converter_sha256": digest(Path(__file__)), "pages": [p+1 for p in pages],
+               "elapsed_seconds": elapsed, "ocr_repairs": prof.repairs,
+               "arguments": sys.argv[1:],
+               "transformations": [{"sources": [s["id"] for s in l.sources],
+                                    "before": " ".join(s["text"] for s in l.sources),
+                                    "after": l.text}
+                                   for n in prof.document_tree for l in n.lines if l.sources
+                                   and " ".join(s["text"] for s in l.sources) != l.text],
+               "nodes": document_payload(prof.document_tree)}
+    (directory / "document.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (directory / "repairs.json").write_text(json.dumps(prof.repairs, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
              math_delims=False, doc=None, figure_dir: Path | None = None,
              figure_vlm: str | None = None) -> str:
@@ -3990,6 +4258,8 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
     # learned before the merge, because the merge itself de-hyphenates
     _WORD_FORMS = learn_word_forms(lines)
     lines = merge_split_headings(lines)
+    prof.document_tree = construct_document(lines, prof)
+    lines = list(document_lines(prof.document_tree))
 
     out: list[str] = []
     toc: list[tuple[int, str]] = []
@@ -4327,19 +4597,7 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
         # boundary, the line is isolated, or indentation jumps (LaTeX
         # first-line indent). Raw vertical gap is deliberately not a rule:
         # see the isolation note below.
-        new_para = False
-        if prev is not None and prev.kind == "body":
-            margin = ln.col_left if ln.col_left else prof.body_left
-            indented = ln.x0 > margin + 4
-            if ln.page != prev.page or ln.col != prev.col:
-                new_para = not looks_continued(prev.text, ln.text)
-            elif ln.isolated and not looks_continued(prev.text, ln.text):
-                # Isolation is y0-to-y0 against measured pitch: stable even
-                # when OCR bounding-box heights jitter. And a gap alone never
-                # outranks a sentence that is plainly still running on.
-                new_para = True
-            elif indented and not looks_continued(prev.text, ln.text):
-                new_para = True
+        new_para = prev is not None and prev.kind == "body" and paragraph_break(prev, ln, prof)
         if new_para:
             flush_para()
         para.append(text)
@@ -4692,7 +4950,7 @@ def write_artifacts(dir_: Path, doc, lines: list[Line], prof: Profile, pages) ->
             f.write(json.dumps({"page": l.page + 1, "kind": l.kind, "regime": l.regime,
                                 "level": l.level, "y": round(l.y0, 1), "x": round(l.x0, 1),
                                 "size": round(l.size, 1), "style": list(l.style),
-                                "text": l.text}, ensure_ascii=False) + "\n")
+                                "text": l.text, "sources": l.sources}, ensure_ascii=False) + "\n")
 
 
 # ===========================================================================
@@ -5055,6 +5313,9 @@ def main():
     ap.add_argument("--soffice", help="path to LibreOffice's soffice for .doc/.odt/.rtf input")
     ap.add_argument("--doc-type", choices=["book", "paper", "deck", "document"],
                     help="override the detected document type")
+    ap.add_argument("--ocr", choices=["off", "auto"], default="off",
+                    help="opt-in selective Tesseract OCR for empty scans and damaged text")
+    ap.add_argument("--ocr-language", default="eng", help="Tesseract language(s), e.g. eng+deu")
     ap.add_argument("--body-only", action="store_true",
                     help="drop front matter (before the first chapter/preface) and "
                          "back matter (references, index, colophon)")
@@ -5064,10 +5325,17 @@ def main():
         ap.error("--figure-vlm needs --figure-dir: the model transcribes the "
                  "cropped figure images, so there must be somewhere to crop them to")
 
+    started = time.perf_counter()
     src = Path(args.input)
     if not src.exists():
         sys.exit(f"not found: {src}")
+    if args.ocr != "off" and not args.artifacts:
+        ap.error("--ocr auto requires --artifacts DIR to retain the repair audit")
+    if args.ocr != "off" and not shutil.which("tesseract"):
+        ap.error("--ocr auto requires the tesseract executable and language data")
     if src.suffix.lower() in ST.STRUCTURED_EXT:
+        if args.ocr != "off":
+            ap.error("--ocr is only supported for PDF input")
         return main_structured(args, src)
 
     doc = open_pdf(src)
@@ -5077,7 +5345,13 @@ def main():
         doc.close()
         sys.exit(str(e))
 
-    lines = extract_lines(doc, pages)
+    lines = extract_lines(doc, pages, preserve_private=args.ocr == "auto")
+    repairs = selective_ocr(doc, lines, pages, args.ocr_language) if args.ocr == "auto" else []
+    if repairs:
+        audit_dir = Path(args.artifacts)
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        (audit_dir / "repairs.json").write_text(json.dumps(repairs, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"OCR: {sum(r['status'] == 'accepted' for r in repairs)}/{len(repairs)} regions accepted", file=sys.stderr)
     if not lines:
         scope = (f"any of {doc.page_count} pages" if len(pages) == doc.page_count
                  else f"the {len(pages)} selected of {doc.page_count} pages")
@@ -5096,6 +5370,7 @@ def main():
               file=sys.stderr)
 
     prof = build_profile(lines, doc, pages)
+    prof.repairs = repairs
     prof.page_count, prof.source_name, prof.doc = doc.page_count, src.name, doc
     prof.rotated_text = list(ROTATED_TEXT)
     dt = DT.classify_document(doc, lines, prof)
@@ -5146,6 +5421,7 @@ def main():
 
     if args.artifacts:
         write_artifacts(Path(args.artifacts), doc, lines, prof, pages)
+        write_quality_artifacts(Path(args.artifacts), src, md, prof, pages, time.perf_counter()-started)
 
     kinds = Counter(l.kind for l in lines)
     print(f"figures {len(prof.figure_regions)}  ", end="")
