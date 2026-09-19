@@ -46,20 +46,23 @@ formats. The converter ships as one Python file with no required model download.
 
 ## Framework
 
+The introduction shows the conversion flow. This section explains the layers,
+structural decisions, and verification techniques behind it.
+
 ### Pipeline layers
 
-The layers below describe each responsibility. The diagram above shows execution
-order: extracted text and geometry provide the evidence for document identification.
+Extraction supplies the evidence for document identification and profiling.
+Classification assigns content roles; assembly turns those roles into Markdown.
 
 ```text
-IDENTIFY   Book / paper / deck / document
-           Combine metadata, geometry, text density, and document markers;
-           record evidence and allow an explicit document-type override.
-
 EXTRACT    Text spans + typography + geometry
            Read fonts, sizes, weights, and bounding boxes;
            normalize page rotation; infer page-local column reading order;
            optionally OCR damaged lines and empty image pages with auditing.
+
+IDENTIFY   Book / paper / deck / document
+           Combine metadata, geometry, text density, and document markers;
+           record evidence and allow an explicit document-type override.
 
 PROFILE    Learn the current document's patterns
            Body style     → dominant font and size by character count
@@ -77,7 +80,8 @@ ASSEMBLE   Structure → readable Markdown
            Merge wrapped headings → validate outline hierarchy
            → construct section / paragraph / list relationships
            → reflow text across lines, pages, and columns
-           → render content + YAML metadata + optional grouped contents.
+           → render content + YAML metadata + optional grouped contents
+           → export source-linked audit artifacts when requested.
 ```
 
 ### Methodology and principles
