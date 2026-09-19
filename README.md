@@ -26,15 +26,6 @@
 pdf2md turns PDF, EPUB, and DOCX files into Markdown using typography and page
 layout to recover structure. It runs locally with PyMuPDF; no API key is needed.
 
-| Feature | Benefit |
-|---|---|
-| 📖 **Readable text** | Reflow paragraphs and rejoin words split across printed lines. |
-| 🧭 **Adaptive layout** | Infer headings and column reading order for books, papers, and reports. |
-| 🔍 **Source traceability** | Inspect classified text, page locations, and optional OCR repair decisions. |
-| 🕸️ **GraphRAG preparation** | Give downstream chunking and relationship extraction more coherent source text. |
-
-## Framework
-
 The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
 an explicit document tree. Optional Tesseract OCR repairs selected regions.
 EPUB and DOCX use their own structural readers; LibreOffice handles older office
@@ -46,6 +37,14 @@ formats. The converter ships as one Python file with no required model download.
   </a>
 </p>
 
+| Feature | Benefit |
+|---|---|
+| 📖 **Readable text** | Reflow paragraphs and rejoin words split across printed lines. |
+| 🧭 **Adaptive layout** | Infer headings and column reading order for books, papers, and reports. |
+| 🔍 **Source traceability** | Inspect classified text, page locations, and optional OCR repair decisions. |
+| 🕸️ **GraphRAG preparation** | Give downstream chunking and relationship extraction more coherent source text. |
+
+## Framework
 
 ### Pipeline layers
 
