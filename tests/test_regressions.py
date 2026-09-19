@@ -84,6 +84,13 @@ class BuildIntegrity(unittest.TestCase):
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_identifier_rename_preserves_source_whitespace(self):
+        import runpy
+        rename = runpy.run_path(str(ROOT / "tools" / "sync_structured.py"))["rename_identifiers"]
+        source = "W = (1 + " + "\\" + "\n    2)  # W stays in comments\nlabel = 'W'\n"
+        expected = "WML" + source[1:]
+        self.assertEqual(rename(source, {"W": "WML"}), expected)
+
     def test_no_corrupted_word_boundary_regex(self):
         self.assertNotIn(r'\WML', CONVERTER.read_text())
 

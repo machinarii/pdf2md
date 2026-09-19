@@ -832,7 +832,7 @@ Five test modules generate their fixtures at runtime so no binaries live in the 
 | `tests/test_pdf_quality.py` | layout and text quality on generated PDFs: column reading order, learned heading styles, running heads, reflow — and the defects the real-library and arXiv sweeps found: rotated pages read in order, undecodable text layers reported, ACM front matter kept out of the YAML, animation builds collapsed, wrapped slide and numbered headings rejoined, private-use glyphs dropped, REVTeX section spines found |
 | `tests/test_research_pipeline.py` | document trees, provenance, OCR acceptance/rollback, font flags, symbols, and benchmark reporting |
 
-The current suite has 82 tests, including the library-sweep regressions and research-pipeline tests. CI runs on Python 3.10–3.13 and installs
+The current suite has 83 tests, including the library-sweep regressions and research-pipeline tests. CI runs on Python 3.10–3.13 and installs
 Tesseract with English data for the scan integration test. Locally, that test
 requires the same optional OCR dependency. Also run:
 
