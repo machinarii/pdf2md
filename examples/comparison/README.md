@@ -39,8 +39,9 @@ columns' paragraphs on this source. pdf2md also produces a title heading and
 YAML metadata.
 
 Both converters miss the section heading tags in this particular example.
-The README excerpts preserve exact output and stop at paragraph boundaries;
-the complete files retain the whole document. A Markdown renderer may collapse
+The README comparison preserves the complete body from both outputs, including
+both section labels and all six paragraphs. Only the title blocks and metadata
+are omitted from the table; the complete files retain them. A Markdown renderer may collapse
 single newlines visually, but that does not correct the interleaved column order.
 
 This is a designed demonstration of two behaviors, not a random or held-out

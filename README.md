@@ -46,7 +46,9 @@ python3 pdf2md_all.py --version  # pdf2md 0.1.0
 
 Same original two-column PDF, two unedited converter outputs. This small synthetic
 example demonstrates paragraph reflow and reading order, not general accuracy.
-Both tools use their local defaults; pdf2md only adds `--no-toc`.
+Both tools use their local defaults; pdf2md only adds `--no-toc`. The comparison
+shows the complete body from both outputs, including **1 Introduction** and
+**2 Preservation**; only the title block and metadata are omitted.
 
 <details>
 <summary>View the source page</summary>
@@ -74,19 +76,45 @@ Record the tool version with the output.<br>
 Research papers often place two columns<br>
 on the same page. Reading order matters:<br>
 finish the left column before continuing<br>
-with the text at the top of the right.</code></td>
+with the text at the top of the right.<br>
+<br>
+Automatic conversion still needs review.<br>
+Complex tables and damaged characters<br>
+can require a closer look at the source.<br>
+A readable result is a useful first step.<br>
+<br>
+A heading should remain a heading.<br>
+Its size and weight provide evidence<br>
+that separates it from ordinary prose.<br>
+The original page remains the reference.<br>
+<br>
+This small example illustrates headings<br>
+and paragraph reflow on a simple layout.<br>
+It is a demonstration, not a benchmark<br>
+of every document or extraction method.</code></td>
 <td valign="top"><code>1 Introduction<br>
 <br>
 A useful archive preserves the structure of a document as well as its words. Short lines on a printed page should become one readable paragraph in Markdown.<br>
 <br>
-Research papers often place two columns on the same page. Reading order matters: finish the left column before continuing with the text at the top of the right.</code></td></tr>
+Research papers often place two columns on the same page. Reading order matters: finish the left column before continuing with the text at the top of the right.<br>
+<br>
+A heading should remain a heading. Its size and weight provide evidence that separates it from ordinary prose. The original page remains the reference.<br>
+<br>
+2 Preservation<br>
+<br>
+Clear text is easier to search and review. Keep the source file so each conversion can be checked against the printed page. Record the tool version with the output.<br>
+<br>
+Automatic conversion still needs review. Complex tables and damaged characters can require a closer look at the source. A readable result is a useful first step.<br>
+<br>
+This small example illustrates headings and paragraph reflow on a simple layout. It is a demonstration, not a benchmark of every document or extraction method.</code></td></tr>
 </table>
 
 Here, MarkItDown places the right-column heading before the left-column text,
 and alternates paragraphs between columns. pdf2md keeps the left column together
 and joins its printed lines into paragraphs. **Both miss the two section heading
-tags in this demo**; pdf2md does recover the document title as an H1. These are
-literal excerpts; the full outputs below retain all content from the example.
+tags in this demo**; pdf2md does recover the document title as an H1. Neither converter drops the Preservation section: pdf2md places it after
+the complete Introduction, following the source columns. The files below also
+include each converter's title block and any generated metadata.
 
 [Full pdf2md output](examples/comparison/pdf2md.md) ·
 [Full MarkItDown output](examples/comparison/markitdown.md) ·
