@@ -40,12 +40,20 @@ BODY_START = "@dataclass"
 
 def rename_identifiers(src: str, mapping: dict[str, str]) -> str:
     """Rename NAME tokens only; strings, comments and numbers are untouched."""
-    out = []
+    # untokenize changes continuation whitespace on Python 3.10/3.11.
+    # Apply token-position edits to the original source to keep it byte-stable.
+    offsets = [0]
+    for line in src.splitlines(keepends=True):
+        offsets.append(offsets[-1] + len(line))
+    edits = []
     for tok in tokenize.generate_tokens(io.StringIO(src).readline):
         if tok.type == tokenize.NAME and tok.string in mapping:
-            tok = tok._replace(string=mapping[tok.string])
-        out.append(tok)
-    return tokenize.untokenize(out)
+            start = offsets[tok.start[0] - 1] + tok.start[1]
+            end = offsets[tok.end[0] - 1] + tok.end[1]
+            edits.append((start, end, mapping[tok.string]))
+    for start, end, replacement in reversed(edits):
+        src = src[:start] + replacement + src[end:]
+    return src
 
 
 def module_body() -> str:

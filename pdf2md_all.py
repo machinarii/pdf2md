@@ -4504,7 +4504,8 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
             continue
         if k == "attribution":
             flush_para(); flush_code()
-            out.append(f"> — {re.sub(r'^\s*[—–-]+\s*', '', text)}")
+            attribution = re.sub(r"^\s*[—–-]+\s*", "", text)
+            out.append(f"> — {attribution}")
             out.append("")
             prev = ln
             continue
