@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 — 2026-09-19
+
+- OCR rotated PDF pages and separate image regions on mixed pages, with per-line confidence and overlap checks.
+- Recognize two consecutive numbered headings in short documents with strong typographic evidence.
+- Accept Unicode heading words and preserve Chinese/Japanese line-joining conventions.
+- Retain long numeric tables with a complete text header.
+- Discover raster figures and add optional, explicitly labeled vision-model descriptions for RAG.
+- Record model and image provenance in `visuals.json`; fix figure links relative to Markdown output.
+- Add regression fixtures for the above; equation reconstruction, dewarping, and cross-document training remain unimplemented.
+
 ## 0.1.0 — 2026-09-19
 
 First explicit version of the existing converter; this is not its first commit.

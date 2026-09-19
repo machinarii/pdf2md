@@ -9,7 +9,7 @@ license. No private library text or third-party book excerpts are included.
 - [Unedited pdf2md output](pdf2md.md)
 - [Unedited MarkItDown output](markitdown.md)
 
-Recorded with pdf2md 0.1.0, PyMuPDF 1.28.2, MarkItDown 0.1.7 and pdfminer-six
+Recorded with pdf2md 0.2.0, PyMuPDF 1.28.2, MarkItDown 0.1.7 and pdfminer-six
 20260107 on Python 3.14.7. No OCR, plugins, cloud backends or postprocessing.
 The source preview was visually checked against the text and column layout.
 
@@ -38,7 +38,8 @@ before the right. MarkItDown retains printed line breaks and interleaves the
 columns' paragraphs on this source. pdf2md also produces a title heading and
 YAML metadata.
 
-Both converters miss the section heading tags in this particular example.
+pdf2md 0.2.0 recovers the two section heading tags; MarkItDown leaves them as
+plain text. The earlier pdf2md 0.1.0 missed these tags.
 The README comparison preserves the complete body from both outputs, including
 both section labels and all six paragraphs. Only the title blocks and metadata
 are omitted from the table; the complete files retain them. A Markdown renderer may collapse

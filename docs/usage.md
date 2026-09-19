@@ -62,9 +62,11 @@ is not sent through OCR. Lines containing replacement/private-use characters are
 recognized from cropped images; empty image pages are recognized as whole pages.
 Known Symbol-font bullets are decoded directly; isolated unknown symbols are
 skipped rather than guessed as letters. Code and math-heavy lines are excluded
-from line repair. Rotated pages are
-explicitly recorded as skipped. Mixed pages with healthy text plus an image
-containing additional text are not automatically OCRed by this first router.
+from line repair. PDF page rotations are handled in displayed page coordinates.
+Separate image regions on mixed pages are OCRed, but regions overlapping native
+text are skipped. Tiny images are ignored. This is not arbitrary orientation
+detection, camera deskewing, or curved-page dewarping. New OCR text must also pass
+a per-line confidence check and fit within the requested region.
 
 Repairs must pass a confidence threshold and checks for intact token order,
 counts, numerical values and plausible length. Rejected candidates leave the
@@ -114,3 +116,35 @@ installation remains PyMuPDF-only. Local learning still means adapting to the
 current document; cross-document model training is not performed.
 
 
+
+## Visual context for RAG
+
+`--figure-dir DIR` preserves detected diagram regions and separate raster images.
+Full-page raster scans are excluded from raster-figure discovery because they
+need OCR. Existing label-based diagram detection still handles some vector
+figures; arbitrary vector charts and complex layouts are not fully covered.
+
+Add `--figure-vlm MODEL` to use a vision-capable model served by Ollama at
+`http://localhost:11434`. Install the model and start Ollama separately. Figure
+images and captions are sent to that endpoint only when the option is requested.
+The converter asks for faithful transcription where possible; otherwise it asks
+for visible chart/image context, readable labels, trends, and ambiguities. It
+explicitly discourages invented values, causation, or unreadable equations.
+These prompt constraints do not guarantee model accuracy.
+
+```bash
+python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
+  --figure-vlm qwen2.5vl:7b --artifacts artifacts/paper
+```
+
+Generated descriptions are visibly labeled in Markdown. `figures/visuals.json`
+records the model, page, displayed-page region coordinates, image filename/hash,
+caption, generated text, and whether the model returned a result. The same records
+are included in `document.json` when artifacts are enabled. Region boxes identify
+the figure; saved crops include a small surrounding margin. Each crop remains
+linked even when model inference fails, with extracted labels where available.
+
+For RAG, keep generated visual context distinct from source transcription and
+carry the image/page provenance into retrieved chunks. Review exact numbers and
+relationships against the image. Rendering/integration is regression-tested with
+mocked vision responses; real-model description quality has not been benchmarked.

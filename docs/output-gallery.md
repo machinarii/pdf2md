@@ -16,7 +16,7 @@ shows the complete body from both outputs, including **1 Introduction** and
 </details>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>1 Introduction<br>
 <br>
 2 Preservation<br>
@@ -50,7 +50,7 @@ This small example illustrates headings<br>
 and paragraph reflow on a simple layout.<br>
 It is a demonstration, not a benchmark<br>
 of every document or extraction method.</code></td>
-<td valign="top"><code>1 Introduction<br>
+<td valign="top"><code># 1 Introduction<br>
 <br>
 A useful archive preserves the structure of a document as well as its words. Short lines on a printed page should become one readable paragraph in Markdown.<br>
 <br>
@@ -58,7 +58,7 @@ Research papers often place two columns on the same page. Reading order matters:
 <br>
 A heading should remain a heading. Its size and weight provide evidence that separates it from ordinary prose. The original page remains the reference.<br>
 <br>
-2 Preservation<br>
+# 2 Preservation<br>
 <br>
 Clear text is easier to search and review. Keep the source file so each conversion can be checked against the printed page. Record the tool version with the output.<br>
 <br>
@@ -69,8 +69,8 @@ This small example illustrates headings and paragraph reflow on a simple layout.
 
 Here, MarkItDown places the right-column heading before the left-column text,
 and alternates paragraphs between columns. pdf2md keeps the left column together
-and joins its printed lines into paragraphs. **Both miss the two section heading
-tags in this demo**; pdf2md does recover the document title as an H1. Neither converter drops the Preservation section: pdf2md places it after
+and joins its printed lines into paragraphs. **pdf2md 0.2.0 recovers both numbered section headings**; MarkItDown retains
+them as plain text. The earlier pdf2md 0.1.0 missed those heading tags. Neither converter drops the Preservation section: pdf2md places it after
 the complete Introduction, following the source columns. The files below also
 include each converter's title block and any generated metadata.
 
@@ -88,7 +88,7 @@ the same settings as above; excerpts are copied from the complete outputs.
 <summary><strong>Broken words: inter- / national, infor- / mation, docu- / mentation</strong></summary>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>The archive connects readers with an inter-<br>
 national community. Each record includes infor-<br>
 mation about the source and its publication.<br>
@@ -105,7 +105,7 @@ pdf2md rejoins the split words and reconstructs the paragraph.
 <summary><strong>Keep real hyphens: self-supervised stays self-supervised</strong></summary>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>A self-supervised method can identify patterns.<br>
 Readers can inspect the training data. This self-<br>
 supervised example also shows why every printed<br>
@@ -122,7 +122,7 @@ hyphen while removing its line break.
 <summary><strong>Page boundaries: remove running headers and page numbers; restore heading tags</strong></summary>
 
 <table>
-<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.2.0</th></tr>
 <tr><td valign="top"><code>Page furniture belongs outside the body text.<br>
 A repeated running header provides navigation on<br>
 paper, but becomes distracting inside an archive.<br>

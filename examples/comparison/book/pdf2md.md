@@ -4,7 +4,7 @@ type: book
 pages: 3
 source: source.pdf
 generator: pdf2md
-generator_version: 0.1.0
+generator_version: 0.2.0
 ---
 
 # source
