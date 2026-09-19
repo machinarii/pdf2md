@@ -787,7 +787,7 @@ What each document taught, in the order it was learned. Each is a rule in the co
 44. **Column templates need geometric evidence.** Per-page chain-merging of left edges collapsed two columns into one on any page with a wide table (cells fill the gap in ≤25pt steps). The original document-level histogram helped with this case. Current detection uses page-local evidence to accommodate changes in layout and page width.
 45. **Boundaries belong in the gutter.** The midpoint between column *starts* is inside the left column's text, so every left-column line "crossed" it and became spanning. Gutters lie between a column's right edge and the next start.
 46. **A cluster inside a column's extent is not a column.** A results table's numeric column formed a third "column" until starts were required to lie beyond the previous column's right edge.
-47. **A key/value table is not two columns.** Columns must be *filled* — text running at least halfway to the gutter. A PRD's `Author / Jin` table has two short columns and fails that.
+47. **A key/value table is not two columns.** Columns must be *filled* — text running at least halfway to the gutter. A PRD's `Author / Example Author` table has two short columns and fails that.
 48. **A document's title block must stop at the first table.** With no heading below the title, "everything above the first heading" was the whole page, and a vendor table became metadata fields.
 49. **My own grep lied twice.** `awk '/^  - /'` prints affiliations as well as authors; a check that matches on a crash's stale output is not a check. Read the artifact, not the terminal.
 
@@ -796,7 +796,7 @@ What each document taught, in the order it was learned. Each is a rule in the co
 50. **LibreOffice's EPUB export has no heading tags.** Every block is `<p class="paraN">`; the hierarchy is entirely in the stylesheet. Parsing the CSS and ranking paragraph styles by size is the PDF style-ranking idea again, and it recovers sections and subsections the nav never mentions.
 51. **Body paragraphs may carry no CSS size at all** — their class sets only margins — so the modal size of *sized* paragraphs is the size of the decorated ones, not the body. When most paragraphs are unsized, the body is the browser default.
 52. **pandoc numbers footnotes per chapter file.** Both chapters had `fn1`; note ids are namespaced by spine position. Its back-link anchors (`class="footnote-back"`) contain the word "footnote" and were read as references until back-links were handled first and their text suppressed.
-53. **A generator's defaults are not metadata.** python-docx writes `creator: python-docx` and a 2013 template date; LibreOffice writes `dc:title: Unknown Title`. These are rejected, and a `Key | Value` table in the document (`Author | Jin`) fills the gap.
+53. **A generator's defaults are not metadata.** python-docx writes `creator: python-docx` and a 2013 template date; LibreOffice writes `dc:title: Unknown Title`. These are rejected, and a `Key | Value` table in the document (`Author | Example Author`) fills the gap.
 54. **A generated title page echoes the metadata into the body.** Headings and paragraphs equal to the title, an author, the publisher or the year are consumed.
 55. **The largest first line is the title** regardless of genre — the same rule the PDF path uses for papers — which is what let the CSS-only EPUB name itself.
 
@@ -890,7 +890,7 @@ Six classifier and layout fixes came out of the sweep: `Skia/PDF` removed from d
 
 ## Real-library sweep
 
-The generated fixtures above are inspectable but agreeable. A second sweep ran the converter over a personal library of **1,566 real PDFs** — 99 subject folders, 21 KB to 727 MB, authored ebooks, ACM and CHI papers, conference decks, scanned art books and government reports — measuring, per file, the share of PyMuPDF's own words that survived into the Markdown.
+The generated fixtures above are inspectable but agreeable. A second sweep ran the converter over a validation corpus of **1,566 real PDFs** — 99 subject folders, 21 KB to 727 MB, authored ebooks, ACM and CHI papers, conference decks, scanned art books and government reports — measuring, per file, the share of PyMuPDF's own words that survived into the Markdown.
 
 The measurement set was 376 documents (35,661 pages, 8.3 minutes to convert): a size-stratified sample of 212 covering every subject folder, plus every document in the library whose pages are all rotated. Median word recall **0.972**; 364 of 376 convert, and all 12 refusals are verified image-only scans.
 
@@ -908,8 +908,8 @@ It found seven defects that no generated fixture had:
 
 ## Whole-library run
 
-The sweeps above sample. This is the whole of `~/knowledge-base/books-pdf`, in
-randomised order, with nothing held back: **1,593 files, 18.8 GB, 138,464
+The sweeps above sample. This run covers the complete validation corpus in
+randomised order: **1,593 files, 18.8 GB, 138,464
 pages**, five minutes of wall-clock across eight shards, 227 MB of Markdown.
 
 **1,562 of 1,593 convert (98.1%).** All 29 refusals were checked against
