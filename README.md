@@ -66,18 +66,16 @@ an explicit document tree. Optional Tesseract OCR repairs selected regions.
 EPUB and DOCX use their own structural readers; LibreOffice handles older office
 formats. The converter ships as one Python file with no required model download.
 
-```mermaid
-flowchart LR
-    A[Extract text and geometry] --> B[Optional selective OCR]
-    B --> C[Identify document type and learn styles]
-    C --> D[Classify content and build structure]
-    D --> E[Reflow and render Markdown]
-    E --> F[Markdown and optional audit artifacts]
-```
+<p align="center">
+  <a href="docs/assets/pipeline.png">
+    <img src="docs/assets/pipeline.png" width="560" alt="pdf2md pipeline: extract text and geometry; optionally OCR damaged text; identify document type and learn styles; build content structure; reflow and render; output Markdown, metadata, and optional audit artifacts.">
+  </a>
+</p>
+
 
 ### Pipeline layers
 
-The layers below describe each responsibility. The flowchart above shows execution
+The layers below describe each responsibility. The diagram above shows execution
 order: extracted text and geometry provide the evidence for document identification.
 
 ```text
