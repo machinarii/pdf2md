@@ -38,7 +38,7 @@ Each time and memory value is the median of three fresh-process trials. PDF page
 ## Method and limits
 
 - Source files were copied locally for both converters; originals were not modified.
-- Seed 20260919: four entries from the initial uniformly sampled Documents/Downloads PDFs; two random library PDFs below 2 MB; two random library PDFs from 2–30 MB. Seed 20260920 adds one randomly selected non-conference, non-report PDF with at least 100 pages. See manifest population counts.
+- Seed 20260919: four entries from the initial uniformly sampled PDF input collection; two random library PDFs below 2 MB; two random library PDFs from 2–30 MB. Seed 20260920 adds one randomly selected non-conference, non-report PDF with at least 100 pages. See manifest population counts.
 - Three trials per engine, alternating engine order. Same Python environment and PDFs. No cloud, OCR, plugins, or audit writing in the timed comparison. Common interpreter/harness startup is excluded; converter imports, conversion, and Markdown writing are included. Filesystem caches were warm from validation. Other host workloads were not controlled.
 - MarkItDown uses its stock local API with plugins disabled; Azure, vision-model and OCR extensions are not compared.
 - Checks were transcribed from rendered source pages before initial output inspection. Four annotation errors were subsequently corrected against the source and applied equally to both tools; the manifest records them.
