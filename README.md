@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">pdf2md</h1>
-<p align="center"><strong>Keep the words. Recover the structure.</strong></p>
+<p align="center"><strong>Keep the words. Recover the structure. Better context. Save on Tokens.</strong></p>
 <p align="center">Turn books, research papers, and everyday documents into readable, inspectable Markdown.</p>
 
 <p align="center">
