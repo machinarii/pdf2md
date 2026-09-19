@@ -15,7 +15,8 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="#see-the-output">See the output</a> ·
+  <a href="#framework">Framework</a> ·
+  <a href="#see-the-output">Examples</a> ·
   <a href="#cleaner-input-for-graphrag">GraphRAG</a> ·
   <a href="#performance">Performance</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
@@ -58,6 +59,51 @@ Output includes inferred headings, reflowed text, YAML metadata, and a table of
 contents unless disabled. DOC, ODT, and RTF input additionally requires LibreOffice.
 Run `python3 pdf2md_all.py --help` for all options.
 
+## Framework
+
+The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
+an explicit document tree. Optional Tesseract OCR repairs selected regions.
+EPUB and DOCX use their own structural readers; LibreOffice handles older office
+formats. The converter ships as one Python file with no required model download.
+
+```mermaid
+flowchart LR
+    A[Extract text and geometry] --> B[Optional selective OCR]
+    B --> C[Identify document type and learn styles]
+    C --> D[Classify content and build structure]
+    D --> E[Reflow and render Markdown]
+    E --> F[Markdown and optional audit artifacts]
+```
+
+### Methodology and principles
+
+1. **Use source evidence.** Font, size, weight, position, and surrounding text
+   inform structure; a short line alone is not enough to establish a heading.
+2. **Adapt to the document.** Infer book, paper, deck, or general document, then
+   learn repeated styles and page-local layout. Learning ends with the conversion.
+3. **Make hierarchy explicit.** Validate heading numbering and parent relationships;
+   group body lines into paragraphs and retain nested list relationships.
+4. **Keep corrections inspectable.** OCR candidates must pass acceptance checks.
+   Rejected repairs preserve the original text, and audit artifacts record decisions.
+5. **Validate against the source.** Regression fixtures and source-annotated checks
+   cover specific failure modes. Successful conversion does not prove faithful output.
+
+### Techniques
+
+| Technique | Purpose |
+|---|---|
+| **Page-local column detection** | Recover reading order when column layouts and page widths change. |
+| **Typography and repeated-style learning** | Recognize headings, including recurring styles in unfamiliar documents. |
+| **Running-header detection** | Identify repeated margin text across distinct pages. |
+| **Paragraph and word reflow** | Join printed lines and preserve compounds observed elsewhere in the document. |
+| **Document regimes** | Apply different rules to front matter, body, references, and indexes. |
+| **Selective OCR with verification** | Target damaged lines and empty image pages instead of OCRing every page. |
+| **Source-linked document tree** | Export sections, paragraphs, lists, and original text locations for inspection. |
+
+These are practical, research-inspired methods, not pretrained layout models or
+cross-document training. [Architecture and limitations](docs/architecture.md) ·
+[Research context and OCR details](docs/usage.md#structure-selective-ocr-and-quality-evaluation)
+
 ## See the output
 
 An excerpt from our original book fixture, converted by both tools without
@@ -77,6 +123,142 @@ mentation helps later readers verify the result.</code></td>
 chapter headings, repeated headers, and compound hyphens, with source previews
 and unedited outputs. These synthetic examples illustrate specific behaviors;
 they are not an overall accuracy score.
+
+### More examples
+
+Expand the comparisons below for additional output from the same reproducible
+fixtures. Text is copied from the recorded outputs, with limitations noted.
+
+<details>
+<summary><strong>Two-column paper: reading order and complete sections</strong></summary>
+
+Same original two-column PDF, two unedited converter outputs. This small synthetic
+example demonstrates paragraph reflow and reading order, not general accuracy.
+Both tools use their local defaults; pdf2md only adds `--no-toc`. The comparison
+shows the complete body from both outputs, including **1 Introduction** and
+**2 Preservation**; only the title block and metadata are omitted.
+
+[View the source page](examples/comparison/source.png)
+
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>1 Introduction<br>
+<br>
+2 Preservation<br>
+<br>
+A useful archive preserves the structure<br>
+of a document as well as its words. Short<br>
+lines on a printed page should become<br>
+one readable paragraph in Markdown.<br>
+<br>
+Clear text is easier to search and review.<br>
+Keep the source file so each conversion<br>
+can be checked against the printed page.<br>
+Record the tool version with the output.<br>
+<br>
+Research papers often place two columns<br>
+on the same page. Reading order matters:<br>
+finish the left column before continuing<br>
+with the text at the top of the right.<br>
+<br>
+Automatic conversion still needs review.<br>
+Complex tables and damaged characters<br>
+can require a closer look at the source.<br>
+A readable result is a useful first step.<br>
+<br>
+A heading should remain a heading.<br>
+Its size and weight provide evidence<br>
+that separates it from ordinary prose.<br>
+The original page remains the reference.<br>
+<br>
+This small example illustrates headings<br>
+and paragraph reflow on a simple layout.<br>
+It is a demonstration, not a benchmark<br>
+of every document or extraction method.</code></td>
+<td valign="top"><code>1 Introduction<br>
+<br>
+A useful archive preserves the structure of a document as well as its words. Short lines on a printed page should become one readable paragraph in Markdown.<br>
+<br>
+Research papers often place two columns on the same page. Reading order matters: finish the left column before continuing with the text at the top of the right.<br>
+<br>
+A heading should remain a heading. Its size and weight provide evidence that separates it from ordinary prose. The original page remains the reference.<br>
+<br>
+2 Preservation<br>
+<br>
+Clear text is easier to search and review. Keep the source file so each conversion can be checked against the printed page. Record the tool version with the output.<br>
+<br>
+Automatic conversion still needs review. Complex tables and damaged characters can require a closer look at the source. A readable result is a useful first step.<br>
+<br>
+This small example illustrates headings and paragraph reflow on a simple layout. It is a demonstration, not a benchmark of every document or extraction method.</code></td></tr>
+</table>
+
+Here, MarkItDown places the right-column heading before the left-column text,
+and alternates paragraphs between columns. pdf2md keeps the left column together
+and joins its printed lines into paragraphs. **Both miss the two section heading
+tags in this demo**; pdf2md does recover the document title as an H1. Neither converter drops the Preservation section: pdf2md places it after
+the complete Introduction, following the source columns. The files below also
+include each converter's title block and any generated metadata.
+
+[Full pdf2md output](examples/comparison/pdf2md.md) ·
+[Full MarkItDown output](examples/comparison/markitdown.md) ·
+[Source generator and reproduction](examples/comparison/README.md)
+
+
+</details>
+
+<details>
+<summary><strong>Keep real hyphens: self-supervised stays self-supervised</strong></summary>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>A self-supervised method can identify patterns.<br>
+Readers can inspect the training data. This self-<br>
+supervised example also shows why every printed<br>
+hyphen should not be removed in the same way.</code></td>
+<td valign="top"><code>A self-supervised method can identify patterns. Readers can inspect the training data. This self-supervised example also shows why every printed hyphen should not be removed in the same way.</code></td></tr>
+</table>
+
+pdf2md uses the spelling elsewhere in the document to preserve the compound's
+hyphen while removing its line break.
+
+</details>
+
+<details>
+<summary><strong>Page boundaries: remove running headers and page numbers; restore heading tags</strong></summary>
+
+<table>
+<tr><th>MarkItDown 0.1.7</th><th>pdf2md 0.1.0</th></tr>
+<tr><td valign="top"><code>Page furniture belongs outside the body text.<br>
+A repeated running header provides navigation on<br>
+paper, but becomes distracting inside an archive.<br>
+Page numbers should not interrupt a paragraph.<br>
+<br>
+1<br>
+<br>
+␌FIELD NOTES ON DOCUMENT ARCHIVES<br>
+<br>
+Chapter 2: Checking</code></td>
+<td valign="top"><code>Page furniture belongs outside the body text. A repeated running header provides navigation on paper, but becomes distracting inside an archive. Page numbers should not interrupt a paragraph.<br>
+<br>
+# Chapter 2: Checking</code></td></tr>
+</table>
+
+MarkItDown retains the page number and repeated running header between chapters.
+pdf2md removes them and emits `# Chapter 2: Checking`. The visible `␌` represents
+MarkItDown's form-feed character; that is the only display substitution here.
+
+</details>
+
+[Book source preview](examples/comparison/book/source.png) ·
+[Complete pdf2md output](examples/comparison/book/pdf2md.md) ·
+[Complete MarkItDown output](examples/comparison/book/markitdown.md) ·
+[Reproduce these examples](examples/comparison/README.md#book-cleanup-gallery)
+
+The full pdf2md output also shows a limitation: without a cover, its document title
+falls back to the filename (`source`), despite the PDF metadata. The chapter
+headings are recovered. No title override or output editing was used.
+
 
 ## OCR and inspection
 
