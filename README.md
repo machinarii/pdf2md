@@ -319,10 +319,25 @@ transcribe readable structure or describe axes, labels, trends, and relationship
 
 ```bash
 python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
-  --figure-vlm qwen2.5vl:7b --artifacts artifacts/paper
+  --figure-vlm qwen3.8:27b --artifacts artifacts/paper
 ```
 
 This requires a running Ollama server and an installed vision-capable model.
+Choose any installed vision-capable tag with `--figure-vlm MODEL`; omit the flag
+for images and extracted labels only. Use `--ollama-host http://SERVER:11434`
+for a remote server.
+
+| Preference | Tested option | Main limitation |
+|---|---|---|
+| Overall diagram explanations | `glm-5.3-flash:cloud` | Sends figures to the cloud; factual errors remain |
+| Local descriptions and full tables | `qwen3.8:27b` | Incorrect comparisons and pin counts |
+| Fast transcription | `glm-ocr:latest` | Repetition and weak relationship descriptions |
+| Other local choices | `qwen3-vl:8b`, `qwen3-vl:30b` | Less complete tables and misleading chart trends |
+
+These choices reflect four reviewed figures, not a general accuracy ranking.
+[Results, timings and confidence limits](benchmarks/visual-context.md).
+There is no calibrated accuracy-confidence score; generated text requires review.
+
 Descriptions are marked **AI-generated**, linked to the crop, and recorded in
 `figures/visuals.json` with model, page, bounding box, and image hash. Model failure
 keeps the image and extracted labels. Review descriptions against the source;

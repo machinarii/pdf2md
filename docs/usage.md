@@ -19,7 +19,7 @@ python3 pdf2md_all.py in.pdf --artifacts DIR          # tree, provenance, repair
 python3 pdf2md_all.py scan.pdf --ocr auto --ocr-language eng --artifacts DIR
 python3 pdf2md_all.py in.pdf --emit-json blocks.json  # typed blocks for RAG chunking
 python3 pdf2md_all.py in.pdf --figure-dir figs        # crop figures to PNG and link them
-python3 pdf2md_all.py in.pdf --figure-dir figs --figure-vlm qwen2.5vl:7b
+python3 pdf2md_all.py in.pdf --figure-dir figs --figure-vlm qwen3.8:27b
 python3 pdf2md_all.py in.pdf --body-only              # chapters only
 python3 pdf2md_all.py in.pdf --title T --author A --author B
 python3 pdf2md_all.py in.pdf --no-toc
@@ -127,7 +127,9 @@ sharing a caption are grouped into one crop. Captionless drawings, captions abov
 figures, and complex layouts are not fully covered.
 
 Add `--figure-vlm MODEL` to use a vision-capable model served by Ollama at
-`http://localhost:11434`. Install the model and start Ollama separately. Figure
+`http://localhost:11434` by default. Select any installed vision-capable tag; there
+is no fixed model allowlist or automatic model choice. Install the model and start
+Ollama separately. Use `--ollama-host URL` to select another server. Figure
 images and captions are sent to that endpoint only when the option is requested.
 The converter asks for faithful transcription where possible; otherwise it asks
 for visible chart/image context, readable labels, trends, and ambiguities. It
@@ -154,7 +156,7 @@ response is not an accuracy check. See the [real-model evaluation](../benchmarks
 
 ```bash
 python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
-  --figure-vlm qwen2.5vl:7b --artifacts artifacts/paper
+  --figure-vlm qwen3.8:27b --artifacts artifacts/paper
 ```
 
 Generated descriptions are visibly labeled in Markdown. `figures/visuals.json`
@@ -168,3 +170,37 @@ For RAG, keep generated visual context distinct from source transcription and
 carry the image/page provenance into retrieved chunks. Review exact numbers and
 relationships against the image. Rendering/integration is regression-tested with
 mocked vision responses; real-model description quality has not been benchmarked.
+
+
+### Choosing a visual model and server
+
+```bash
+# Local model; install it on the server first with ollama pull MODEL.
+python3 pdf2md_all.py paper.pdf --figure-dir figures --figure-vlm qwen3.8:27b
+
+# Another installed local vision model, on a remote Ollama server.
+python3 pdf2md_all.py paper.pdf --figure-dir figures \
+  --figure-vlm qwen3-vl:30b --ollama-host http://SERVER:11434
+
+# Cloud model through Ollama: images and captions leave your machine.
+python3 pdf2md_all.py paper.pdf --figure-dir figures --figure-vlm glm-5.3-flash:cloud
+
+# Preserve images without model requests.
+python3 pdf2md_all.py paper.pdf --figure-dir figures
+```
+
+`--ollama-host` defaults to `http://localhost:11434` and only affects requested
+visual descriptions. Use the exact model tag installed on that server (`ollama
+list` on the server). Model downloads are not automatic. A `:cloud` model may
+forward crops and captions to its provider even when Ollama itself runs locally.
+
+Our four-figure diagnostic favored GLM-5.3-Flash for overall explanations and
+Qwen3.8:27b for local descriptions and complete tables. GLM-OCR was fastest for
+transcription. Qwen3-VL 8B/30B were faster than Qwen3.8 in these runs but omitted
+more values and made serious chart-interpretation errors. All require review;
+see [methods, results and confidence limits](../benchmarks/visual-context.md).
+
+The current audit fields indicate generation state, not measured accuracy.
+There is no automatic confidence threshold or model-selection benchmark built
+into the CLI. Contradiction, coverage and cross-view checks are proposed in the
+evaluation document; they are not yet implemented.

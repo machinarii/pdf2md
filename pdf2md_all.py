@@ -4493,7 +4493,8 @@ def write_quality_artifacts(directory, src, md, prof, pages, elapsed):
 
 def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
              math_delims=False, doc=None, figure_dir: Path | None = None,
-             figure_vlm: str | None = None, output_dir: Path | None = None) -> str:
+             figure_vlm: str | None = None, output_dir: Path | None = None,
+             ollama_host: str = "http://localhost:11434") -> str:
     global _PITCH, _PROF, _WORD_FORMS
     _PITCH = prof.line_pitch
     _PROF = prof
@@ -4674,7 +4675,8 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
                 target = os.path.relpath(img.resolve(), (output_dir or Path.cwd()).resolve())
                 block.insert(0, f"![{cap or 'figure'}]({quote(Path(target).as_posix())})")
                 block.insert(1, "")
-            desc = describe_region_vlm(img, cap, figure_vlm) if (img and figure_vlm) else None
+            desc = (describe_region_vlm(img, cap, figure_vlm, host=ollama_host.rstrip("/"))
+                    if (img and figure_vlm) else None)
             if img and figure_vlm:
                 import hashlib
                 prof.visual_descriptions.append({
@@ -5561,7 +5563,10 @@ def main():
                     "and link them from the Markdown")
     ap.add_argument("--figure-vlm", metavar="MODEL",
                     help="Ollama vision model to transcribe or describe each figure crop "
-                         "(e.g. qwen2.5vl:7b); requires --figure-dir")
+                         "(any installed vision-capable tag, e.g. qwen3.8:27b); "
+                         "requires --figure-dir; omitted by default")
+    ap.add_argument("--ollama-host", default="http://localhost:11434", metavar="URL",
+                    help="Ollama server for --figure-vlm (default: http://localhost:11434)")
     ap.add_argument("--artifacts", metavar="DIR",
                     help="write inspectable intermediates: profile.json, stats.json, "
                          "blocks.jsonl (every typed line), and pages/NNN.txt")
@@ -5674,7 +5679,8 @@ def main():
     out = Path(args.output) if args.output else src.with_suffix(".md")
     md = assemble(lines, prof, make_toc=not args.no_toc,
                   math_delims=args.math_delims, doc=doc,
-                  figure_dir=fig_dir, figure_vlm=args.figure_vlm, output_dir=out.parent)
+                  figure_dir=fig_dir, figure_vlm=args.figure_vlm, output_dir=out.parent,
+                  ollama_host=args.ollama_host)
     out = Path(args.output) if args.output else src.with_suffix(".md")
     if out.resolve() == src.resolve():
         doc.close()

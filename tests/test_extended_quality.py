@@ -209,9 +209,12 @@ class ExtendedQuality(unittest.TestCase):
             self.m.classify(lines,prof)
             self.m.add_image_figures(doc,lines,prof,[0])
             self.assertEqual(len(prof.figure_regions),1)
-            with patch.object(self.m,'describe_region_vlm',return_value='Visible trend: the series rises.'):
+            with patch.object(self.m,'describe_region_vlm',return_value='Visible trend: the series rises.') as describe:
                 md=self.m.assemble(lines,prof,make_toc=False,doc=doc,figure_dir=tmp/'assets',
-                                   figure_vlm='test-model',output_dir=tmp/'markdown')
+                                   figure_vlm='test-model',output_dir=tmp/'markdown',
+                                   ollama_host='http://vision.example:11434/')
+            self.assertEqual(describe.call_args.args[2], 'test-model')
+            self.assertEqual(describe.call_args.kwargs['host'], 'http://vision.example:11434')
             self.assertIn('../assets/fig-',md)
             self.assertIn('AI-generated visual context',md)
             self.assertIn('Visible trend: the series rises.',md)
