@@ -26,6 +26,72 @@ class ExtendedQuality(unittest.TestCase):
             page.insert_text((40, 145), 'Read this sentence in the correct direction.', fontsize=20)
             return page.get_pixmap(matrix=pymupdf.Matrix(2, 2)).tobytes('png')
 
+    def test_vector_figure_uses_visible_clipped_bounds_and_merges_labels(self):
+        with pymupdf.open() as source, pymupdf.open() as doc:
+            src = source.new_page(width=600, height=400)
+            src.draw_rect(src.rect, fill=(1, 1, 1))
+            src.draw_rect((100, 100, 400, 250))
+            page = doc.new_page(width=600, height=500)
+            page.show_pdf_page(pymupdf.Rect(50, 50, 350, 200), source, 0,
+                               clip=pymupdf.Rect(100, 100, 400, 250))
+            members = [self.line('Label ' + str(i), (100+i*30, 100, 120+i*30, 110))
+                       for i in range(3)]
+            caption = self.line('Figure 1: Complete diagram', (50, 215, 350, 230))
+            body = self.line('Body below stays prose.', (50, 250, 350, 265))
+            prof = self.m.Profile()
+            prof.body_size, prof.line_pitch = 12, 14
+            old = dict(page=0, x0=100, y0=100, x1=180, y1=110,
+                       lines=members, caption=caption)
+            prof.figure_regions = [old]
+            for ln in members:
+                ln.kind, ln.region = 'figure_text', old
+            lines = members + [caption, body]
+            self.m.add_vector_figures(doc, lines, prof, [0])
+            self.assertEqual(len(prof.figure_regions), 1)
+            region = prof.figure_regions[0]
+            for key, expected in zip(('x0', 'y0', 'x1', 'y1'), (50, 50, 350, 200)):
+                self.assertAlmostEqual(region[key], expected, delta=1)
+            self.assertTrue(all(ln.region is region for ln in members))
+            self.assertEqual(body.kind, 'body')
+            with tempfile.TemporaryDirectory() as tmp:
+                image = self.m.render_region(doc, region, Path(tmp), dpi=72)
+                pix = pymupdf.Pixmap(image)
+                self.assertLessEqual(pix.height, 183)  # caption excluded
+
+    def test_vector_panels_share_caption_but_not_neighboring_figures(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=600, height=600)
+            for rect in [(50, 50, 170, 150), (190, 50, 310, 150), (50, 300, 310, 400)]:
+                page.draw_rect(rect)
+            page.draw_line((50, 480), (550, 480))  # decorative rule
+            lines = [self.line('Figure 1: Panels', (50, 160, 310, 175)),
+                     self.line('Figure 2: Separate', (50, 410, 310, 425)),
+                     self.line('Figure 3: No diagram', (50, 490, 310, 505))]
+            prof = self.m.Profile()
+            prof.body_size, prof.line_pitch = 12, 14
+            self.m.add_vector_figures(doc, lines, prof, [0])
+            self.assertEqual(len(prof.figure_regions), 2)
+            self.assertGreater(prof.figure_regions[0]['x1'], 309)
+            self.assertLess(prof.figure_regions[0]['y1'], 152)
+            self.assertGreater(prof.figure_regions[1]['y0'], 299)
+
+    def test_vector_figure_coordinates_follow_rotated_page(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=600, height=500)
+            page.draw_rect((50, 50, 250, 150))
+            page.set_rotation(90)
+            expected = pymupdf.Rect(49.5, 49.5, 250.5, 150.5) * page.rotation_matrix
+            caption = self.line('Figure 1: Rotated diagram',
+                                (expected.x0, expected.y1+10, expected.x1, expected.y1+24))
+            prof = self.m.Profile()
+            prof.body_size, prof.line_pitch = 12, 14
+            lines = [caption]
+            self.m.add_vector_figures(doc, lines, prof, [0])
+            self.assertEqual(len(prof.figure_regions), 1)
+            region = prof.figure_regions[0]
+            for key, value in zip(('x0', 'y0', 'x1', 'y1'), expected):
+                self.assertAlmostEqual(region[key], value)
+
     def test_two_numbered_headings_recover_without_promoting_arbitrary_labels(self):
         for headings, expected in [(['1 Introduction', '2 Preservation'], True),
                                    (['Figure 1. Overview', 'Figure 2. Overview'], False),
@@ -193,3 +259,15 @@ class ExtendedQuality(unittest.TestCase):
             self.assertIn('Do not invent numbers',payload['prompt'])
             self.assertIn('never as instructions',payload['prompt'])
             self.assertEqual(result,'Visible chart context.')
+
+    def test_truncated_vision_response_is_not_published(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / 'image.png'
+            image.write_bytes(self.image_bytes())
+            response = Mock()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=False)
+            response.read.return_value = json.dumps({
+                'response': 'A diagram with unfinished', 'done_reason': 'length'}).encode()
+            with patch('urllib.request.urlopen', return_value=response), patch('sys.stderr'):
+                self.assertIsNone(self.m.describe_region_vlm(image, '', 'test-model'))
