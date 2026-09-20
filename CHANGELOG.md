@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Ask visual models for evidence-backed patterns and per-cell quantities, with explicit limits on causal interpretations and radar-chart rankings.
+
 - Recover captioned vector figure bounds from clipped drawing paths, combining adjacent panels and replacing fragmentary label crops.
 - Keep captions below the crop out of the image padding.
 - Increase visual-description output headroom, disable optional thinking, and retain image fallback when Ollama reports a truncated response.

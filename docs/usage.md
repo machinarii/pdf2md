@@ -133,6 +133,12 @@ The converter asks for faithful transcription where possible; otherwise it asks
 for visible chart/image context, readable labels, trends, and ambiguities. It
 explicitly discourages invented values, causation, or unreadable equations.
 These prompt constraints do not guarantee model accuracy.
+Descriptions request prominent patterns and their visible evidence: per-metric
+leaders and trade-offs, chart changes, and diagram branches or feedback loops.
+For boards and grids, they also request meaningful per-cell quantities, including
+pip or marker counts, rather than tile colors alone. Marker counts are not treated
+as game values without source evidence. Exact counting and inferred relationships
+still require verification; radar polygon area is not an overall performance score.
 Optional thinking is disabled and the output budget allows 1,600 tokens.
 Responses reported as truncated are discarded in favor of the image and labels.
 Some model backends still include planning text or unsupported details; a completed
