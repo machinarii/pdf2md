@@ -53,6 +53,13 @@ run; they do not establish a controlled model ranking or speed comparison.
 
 ## Limits
 
+A subsequent pattern-focused prompt elicited useful table-backed comparisons,
+but Flash incorrectly called Player 2 lowest in Wood Products Carbon (37); Player
+3 is lower (33). Board counts in a full-image description were frequently wrong.
+After adding explicit pip/marker-count instructions, a focused board request hit
+the output limit and was rejected. These follow-ups reinforce that better prompts
+do not replace quantitative validation or establish reliable automatic counting.
+
 Whole-figure recovery is improved for these cases, not solved for all documents.
 The detector currently relies on a nearby numbered English figure caption below
 the drawing. Captionless figures, captions above drawings, unusual clipping or
