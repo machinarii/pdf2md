@@ -139,6 +139,10 @@ Simple flowcharts are described as numbered steps in arrow order. Complex,
 heavily branching flows use connected prose explaining stages, splits, merges,
 and feedback. Parallel paths and alternatives must not be presented as a single
 sequence; process meaning takes priority over box colors and icons.
+For any diagram too complex to represent faithfully in a table, list, or other
+structured format, the description uses connected sentences covering the main
+components, relationships, and supported patterns. This prose fallback applies
+to all diagram types; it must preserve ambiguity rather than force a false structure.
 For boards and grids, they also request meaningful per-cell quantities, including
 pip or marker counts, rather than tile colors alone. Marker counts are not treated
 as game values without source evidence. Exact counting and inferred relationships

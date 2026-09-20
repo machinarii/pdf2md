@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use connected prose for any diagram whose complexity cannot be represented faithfully in a structured format.
+
 - Describe simple flowcharts as ordered steps and complex branching flows in connected prose, preserving alternatives and feedback loops.
 
 - Ask visual models for evidence-backed patterns and per-cell quantities, with explicit limits on causal interpretations and radar-chart rankings.
