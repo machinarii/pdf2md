@@ -3436,6 +3436,78 @@ def region_labels(region: dict) -> list[str]:
     return out
 
 
+def add_vector_figures(doc, lines, prof, pages):
+    """Recover captioned vector figures using visible paths, not tiny labels.
+
+    PDF paths can extend well outside their clipping region. Intersect with
+    the active nested clips before clustering or a background fill can turn
+    a small figure into a page-sized crop. Coordinates follow displayed pages.
+    """
+    for pno in pages:
+        page = doc[pno]
+        paths, clips = [], []
+        for path in page.get_drawings(extended=True):
+            level = path.get("level", 0)
+            while clips and clips[-1][0] >= level:
+                clips.pop()
+            if path["type"] == "clip":
+                clip = pymupdf.Rect(path["scissor"])
+                if clips:
+                    clip &= clips[-1][1]
+                clips.append((level, clip))
+            elif path["type"] in ("s", "f", "fs"):
+                box = pymupdf.Rect(path["rect"])
+                # Give zero-width strokes a geometric footprint for clustering.
+                box += (-0.5, -0.5, 0.5, 0.5)
+                if clips:
+                    box &= clips[-1][1]
+                if not box.is_empty:
+                    paths.append(dict(path, rect=box))
+        if not paths:
+            continue
+        clusters = [box * page.rotation_matrix for box in
+                    page.cluster_drawings(drawings=paths)]
+        clusters = [box & page.rect for box in clusters
+                    if box.width >= 40 and box.height >= 25
+                    and box.get_area() < page.rect.get_area() * 0.8]
+        captions = [ln for ln in lines if ln.page == pno and
+                    re.match(r"^(?:Figure|Fig\.)\s*\d+\s*[:.]", ln.text.strip())]
+        for caption in captions:
+            candidates = [box for box in clusters
+                          if 0 <= caption.y0 - box.y1 <= max(36, prof.line_pitch * 3)
+                          and box.x1 > caption.x0 and box.x0 < caption.x1]
+            if not candidates:
+                continue
+            nearest = min(candidates, key=lambda box: caption.y0 - box.y1)
+            box = pymupdf.Rect(nearest)
+            # A shared caption can cover several side-by-side chart panels.
+            for other in candidates:
+                if abs(other.y1 - nearest.y1) <= prof.line_pitch:
+                    box |= other
+            members = [ln for ln in lines if ln.page == pno and ln is not caption
+                       and box.contains(pymupdf.Point((ln.x0 + ln.x1) / 2,
+                                                     (ln.y0 + ln.y1) / 2))]
+            if not members:
+                members = [Line(pno, "", *box, prof.body_size, (), False, False,
+                                False, 0, kind="figure_text")]
+                lines.extend(members)
+            # Merge complete old label regions only; preserve unrelated regions.
+            old = [r for r in prof.figure_regions if r["page"] == pno and
+                   box.contains(pymupdf.Rect(*(r[k] for k in ("x0", "y0", "x1", "y1"))))]
+            for region in old:
+                for ln in region["lines"]:
+                    if not any(ln is member for member in members):
+                        members.append(ln)
+            old_ids = {id(r) for r in old}
+            prof.figure_regions = [r for r in prof.figure_regions if id(r) not in old_ids]
+            members.sort(key=lambda ln: (ln.y0, ln.x0))
+            region = dict(page=pno, x0=box.x0, y0=box.y0, x1=box.x1, y1=box.y1,
+                          lines=members, caption=caption, vector=True)
+            for ln in members:
+                ln.kind, ln.region = "figure_text", region
+            prof.figure_regions.append(region)
+
+
 def add_image_figures(doc, lines, prof, pages):
     """Keep otherwise invisible raster figures available for crops and visual RAG.
 
@@ -3475,6 +3547,9 @@ def render_region(doc, region: dict, out_dir: Path, dpi: int = 200,
     page = doc[region["page"]]
     clip = pymupdf.Rect(region["x0"] - pad, region["y0"] - pad,
                         region["x1"] + pad, region["y1"] + pad) & page.rect
+    caption = region.get("caption")
+    if caption is not None and caption.y0 >= region["y1"]:
+        clip.y1 = min(clip.y1, caption.y0 - 1)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"fig-p{region['page'] + 1:03d}-{int(region['x0']):03d}-{int(region['y0']):03d}.png"
     page.get_pixmap(dpi=dpi, clip=clip).save(str(path))
@@ -3506,11 +3581,15 @@ def describe_region_vlm(image_path: Path, caption: str, model: str,
             "Do not add external knowledge, instructions, hyperlinks, or remote images. "
             "Use concise Markdown and end with any limitations. Max 250 words.")
         body = _json.dumps({"model": model, "prompt": prompt, "images": [img],
-                            "stream": False, "options": {"temperature": 0, "num_predict": 600}}).encode()
+                            "stream": False, "think": False,
+                            "options": {"temperature": 0, "num_predict": 1600}}).encode()
         req = urllib.request.Request(f"{host}/api/generate", data=body,
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=180) as r:
-            return _json.loads(r.read())["response"].strip() or None
+            result = _json.loads(r.read())
+            if result.get("done_reason") == "length":
+                raise ValueError("visual description reached the output limit")
+            return result["response"].strip() or None
     except Exception as e:
         # A missing or failing Ollama must never break a conversion -- but it
         # must not be silent either. Warn once, then keep converting.
@@ -5521,6 +5600,7 @@ def main():
     prof.doc_evidence, prof.doc_scores = dt.evidence, dt.scores
     classify(lines, prof)
     if args.figure_dir:
+        add_vector_figures(doc, lines, prof, pages)
         add_image_figures(doc, lines, prof, pages)
 
     # <author>#<title>[#index].pdf naming convention (from book-cleaner-cli)

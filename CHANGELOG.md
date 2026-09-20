@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Recover captioned vector figure bounds from clipped drawing paths, combining adjacent panels and replacing fragmentary label crops.
+- Keep captions below the crop out of the image padding.
+- Increase visual-description output headroom, disable optional thinking, and retain image fallback when Ollama reports a truncated response.
+- Evaluate corrected crops with GLM-5.3-Flash cloud; descriptions still require review.
+
 ## 0.2.0 — 2026-09-19
 
 - OCR rotated PDF pages and separate image regions on mixed pages, with per-line confidence and overlap checks.

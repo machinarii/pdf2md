@@ -122,7 +122,9 @@ current document; cross-document model training is not performed.
 `--figure-dir DIR` preserves detected diagram regions and separate raster images.
 Full-page raster scans are excluded from raster-figure discovery because they
 need OCR. Existing label-based diagram detection still handles some vector
-figures; arbitrary vector charts and complex layouts are not fully covered.
+figures. Captioned vector drawings use clipped path bounds, and nearby panels
+sharing a caption are grouped into one crop. Captionless drawings, captions above
+figures, and complex layouts are not fully covered.
 
 Add `--figure-vlm MODEL` to use a vision-capable model served by Ollama at
 `http://localhost:11434`. Install the model and start Ollama separately. Figure
@@ -131,6 +133,10 @@ The converter asks for faithful transcription where possible; otherwise it asks
 for visible chart/image context, readable labels, trends, and ambiguities. It
 explicitly discourages invented values, causation, or unreadable equations.
 These prompt constraints do not guarantee model accuracy.
+Optional thinking is disabled and the output budget allows 1,600 tokens.
+Responses reported as truncated are discarded in favor of the image and labels.
+Some model backends still include planning text or unsupported details; a completed
+response is not an accuracy check. See the [real-model evaluation](../benchmarks/visual-context.md).
 
 ```bash
 python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
