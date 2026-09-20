@@ -135,6 +135,10 @@ explicitly discourages invented values, causation, or unreadable equations.
 These prompt constraints do not guarantee model accuracy.
 Descriptions request prominent patterns and their visible evidence: per-metric
 leaders and trade-offs, chart changes, and diagram branches or feedback loops.
+Simple flowcharts are described as numbered steps in arrow order. Complex,
+heavily branching flows use connected prose explaining stages, splits, merges,
+and feedback. Parallel paths and alternatives must not be presented as a single
+sequence; process meaning takes priority over box colors and icons.
 For boards and grids, they also request meaningful per-cell quantities, including
 pip or marker counts, rather than tile colors alone. Marker counts are not treated
 as game values without source evidence. Exact counting and inferred relationships
