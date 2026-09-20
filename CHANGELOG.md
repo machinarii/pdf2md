@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Describe simple flowcharts as ordered steps and complex branching flows in connected prose, preserving alternatives and feedback loops.
+
 - Ask visual models for evidence-backed patterns and per-cell quantities, with explicit limits on causal interpretations and radar-chart rankings.
 
 - Recover captioned vector figure bounds from clipped drawing paths, combining adjacent panels and replacing fragmentary label crops.
