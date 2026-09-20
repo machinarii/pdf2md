@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `--ollama-host` for user-selected visual models on remote Ollama servers.
+- Document six tested visual model tags, accuracy failures, timing limits and the absence of calibrated confidence scores.
+
 - Use connected prose for any diagram whose complexity cannot be represented faithfully in a structured format.
 
 - Describe simple flowcharts as ordered steps and complex branching flows in connected prose, preserving alternatives and feedback loops.
