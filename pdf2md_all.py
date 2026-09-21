@@ -2671,6 +2671,7 @@ class Profile:
     body_font: str = ""
     page_w: float = 0.0
     page_h: float = 0.0
+    page_heights: dict = field(default_factory=dict)
     header_band: float = 0.0     # y below this = header furniture
     footer_band: float = 0.0     # y above this = footer furniture
     heading_styles: dict = field(default_factory=dict)   # style -> level
@@ -2969,6 +2970,7 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
     p = Profile()
     p.page_w = doc[page_range[0]].rect.width
     p.page_h = doc[page_range[0]].rect.height
+    p.page_heights = {n: doc[n].rect.height for n in page_range}
 
     # An OCR text layer carries no font identity, so switch the style key from
     # (font, exact size) to a quantised relative-size band before profiling.
@@ -3017,7 +3019,7 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
     # like "Chapter 1: Introduction" (23 chars) survive a naive cleaner.
     band_text = defaultdict(set)
     for ln in lines:
-        if not (ln.y0 <= p.header_band or ln.y1 >= p.footer_band):
+        if not (ln.y0 <= p.page_heights[ln.page] * 0.10 or ln.y1 >= p.page_heights[ln.page] * 0.94):
             continue
         norm = re.sub(r"\d+", "#", ln.text.strip())
         # never let an equation number "(4.7)" become a running-head pattern
@@ -3026,6 +3028,18 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
         band_text[norm].add(ln.page)
     thresh = max(3, int(npages * 0.02))
     p.running_heads = {t for t, pages in band_text.items() if len(pages) >= thresh}
+
+    # Some section titles occur on too few pages to pass document-wide
+    # repetition. A section/chapter label and folio sharing a margin baseline
+    # establish a running-header row independently of its title frequency.
+    for page_no, page_lines in by_page.items():
+        head = [ln for ln in page_lines if ln.y0 <= p.page_heights[page_no] * .10]
+        for marker in head:
+            if not re.match(r"^(?:Section|Chapter)\s+\d", marker.text):
+                continue
+            row = [ln for ln in head if abs(ln.y0 - marker.y0) < 3]
+            if any(PAGE_NUM_ONLY_RE.fullmatch(ln.text.strip()) for ln in row):
+                p.running_heads.update(re.sub(r"\d+", "#", ln.text.strip()) for ln in row)
 
     # --- heading styles ----------------------------------------------------
     style_lines = defaultdict(list)
@@ -3039,7 +3053,7 @@ def build_profile(lines: list[Line], doc, page_range) -> Profile:
         if font_family(font) not in p.text_families:
             continue                                    # figure text
         body_ls = [l for l in ls
-                   if not (l.y0 <= p.header_band or l.y1 >= p.footer_band)]
+                   if not (l.y0 <= p.page_heights[l.page] * 0.10 or l.y1 >= p.page_heights[l.page] * 0.94)]
         # Two consecutive numbered headings are enough on a short document,
         # but two bold captions or arbitrary labels are not.
         numbered = [re.match(r"^(\d{1,2}(?:\.\d{1,2})*)\.?\s+\S", l.text)
@@ -3436,6 +3450,124 @@ def region_labels(region: dict) -> list[str]:
     return out
 
 
+def mark_duplicate_margin_terms(lines, prof):
+    """Suppress small sidebar echoes only when nearby main text contains the term."""
+    by_page = defaultdict(list)
+    for ln in lines:
+        by_page[ln.page].append(ln)
+    normalize = lambda text: re.sub(r"[^\w]+", " ", text.casefold()).strip()
+    for pl in by_page.values():
+        body = [ln for ln in pl if ln.kind == "body" and
+                abs(ln.size - prof.body_size) < .5 and len(ln.text) > 50]
+        if len(body) < 8:
+            continue
+        left = statistics.median(ln.x0 for ln in body)
+        for ln in pl:
+            if ln.size >= prof.body_size * .8 or ln.x1 > left - 8:
+                continue
+            term = normalize(ln.text)
+            if len(term) < 4 or len(term.split()) > 8:
+                continue
+            nearby = " ".join(normalize(b.text) for b in sorted(pl, key=lambda b: b.y0)
+                              if b.x0 >= left - 4 and b.kind in ("body", "list_item", "list_cont")
+                              and abs(b.y0 - ln.y0) < prof.line_pitch * 2.5)
+            if f" {term} " in f" {nearby} ":
+                ln.kind = "consumed"
+
+
+def recover_captioned_layout(doc, lines, prof, pages):
+    """Recover ruled, top-captioned report visuals without treating plots as tables.
+
+    Require an isolated figure/table number, a rule immediately beneath it, and
+    a source line closing the region. These boundaries also separate full-width
+    visuals from the independent prose columns above and below them.
+    """
+    for pno in pages:
+        page = doc[pno]
+        if page.rotation:
+            continue  # this detector uses unrotated PDF coordinates
+        pl = [ln for ln in lines if ln.page == pno]
+        anchors = [ln for ln in pl if re.fullmatch(
+            r"(?:FIGURE|TABLE)\s+\d+[.:]?", ln.text.strip(), re.I)]
+        if not anchors:
+            continue
+        paths = page.get_drawings()
+        rules = [pymupdf.Rect(p["rect"]) for p in paths
+                 if p["rect"].width >= page.rect.width * 0.3 and p["rect"].height < 2]
+        recovered = []
+        for anchor in sorted(anchors, key=lambda ln: ln.y0):
+            borders = [b for b in rules if -2 <= b.y0 - anchor.y1 <= 12
+                       and b.x0 - 5 <= anchor.x0 <= b.x1]
+            if not borders:
+                continue
+            border = min(borders, key=lambda b: abs(b.y0 - anchor.y1))
+            endings = [ln for ln in pl if ln.y0 > border.y0 and
+                       re.match(r"^Source\s*:", ln.text.strip(), re.I)
+                       and border.x0 - 5 <= ln.x0 < border.x1]
+            if not endings:
+                continue
+            end = min(endings, key=lambda ln: ln.y0)
+            if any(anchor.y0 < a.y0 < end.y0 for a in anchors if a is not anchor):
+                continue
+            box = pymupdf.Rect(border.x0, anchor.y0, border.x1, end.y1)
+            members = sorted([ln for ln in pl if box.contains(pymupdf.Point(
+                (ln.x0 + ln.x1) / 2, (ln.y0 + ln.y1) / 2))], key=lambda ln: (ln.y0, ln.x0))
+            if anchor not in members:
+                continue
+            if anchor.text.upper().startswith("TABLE"):
+                candidates = page.find_tables(clip=(box + (-2, -2, 2, 2)) & page.rect).tables
+                candidates = [t for t in candidates if t.row_count >= 3 and 2 <= t.col_count <= 12]
+                if not candidates:
+                    continue
+                native = max(candidates, key=lambda t: t.row_count * t.col_count)
+                rows = [[re.sub(r"\s+", " ", c or "").strip() for c in row]
+                        for row in native.extract()]
+                if sum(bool(c) for row in rows for c in row) < .65 * len(rows) * native.col_count:
+                    continue
+                tb = pymupdf.Rect(native.bbox)
+                cells = [ln for ln in members if tb.contains(pymupdf.Point(
+                    (ln.x0 + ln.x1) / 2, (ln.y0 + ln.y1) / 2))]
+                if not cells:
+                    continue
+                old_ids = {id(ln.table) for ln in cells if ln.table is not None}
+                prof.tables = [t for t in prof.tables if id(t) not in old_ids]
+                table = dict(page=pno, cols=native.col_count,
+                             grid=[dict(enumerate(row)) for row in rows], first=cells[0])
+                for ln in cells:
+                    ln.kind, ln.table = "table_cell", table
+                prof.tables.append(table)
+                anchor.kind = "caption"
+            else:
+                drawn = [p for p in paths if box.contains(pymupdf.Rect(p["rect"]))
+                         and pymupdf.Rect(p["rect"]).height > 3]
+                if len(drawn) < 5:
+                    continue
+                region = dict(page=pno, x0=box.x0, y0=box.y0, x1=box.x1, y1=box.y1,
+                              lines=members, caption=anchor, vector=True, source_bounded=True)
+                for ln in members:
+                    ln.kind, ln.region = "figure_text", region
+                prof.figure_regions = [r for r in prof.figure_regions
+                    if not any(any(ln is m for m in members) for ln in r["lines"])]
+                prof.figure_regions.append(region)
+            recovered.append((box, members))
+        if recovered:
+            member_ids = {id(ln) for _, group in recovered for ln in group}
+            rest = [ln for ln in pl if id(ln) not in member_ids]
+            ordered = []
+            for box, group in recovered:
+                band = [ln for ln in rest if ln.y0 < box.y0]
+                R.reorder_columns(band, page.rect.width)
+                ordered.extend(band)
+                ordered.extend(group)
+                used = {id(ln) for ln in band}
+                rest = [ln for ln in rest if id(ln) not in used]
+            R.reorder_columns(rest, page.rect.width)
+            ordered.extend(rest)
+            first = next(i for i, ln in enumerate(lines) if ln.page == pno)
+            lines[:] = [ln for ln in lines if ln.page != pno]
+            lines[first:first] = ordered
+
+
 def add_vector_figures(doc, lines, prof, pages):
     """Recover captioned vector figures using visible paths, not tiny labels.
 
@@ -3545,6 +3677,8 @@ def render_region(doc, region: dict, out_dir: Path, dpi: int = 200,
     """Crop the figure from the page raster. For an OCR'd scan the whole page
     is one image, so this is the only way to get the diagram itself out."""
     page = doc[region["page"]]
+    if region.get("source_bounded"):
+        pad = min(pad, 2)  # the source line already closes this complete region
     clip = pymupdf.Rect(region["x0"] - pad, region["y0"] - pad,
                         region["x1"] + pad, region["y1"] + pad) & page.rect
     caption = region.get("caption")
@@ -3894,8 +4028,8 @@ def classify(lines: list[Line], prof: Profile) -> None:
         norm = re.sub(r"\d+", "#", ln.text.strip())
 
         # --- furniture: margin band + (repeated OR bare folio) ---
-        in_header = ln.y0 <= prof.header_band
-        in_footer = ln.y1 >= prof.footer_band
+        in_header = ln.y0 <= prof.page_heights.get(ln.page, prof.page_h) * 0.10
+        in_footer = ln.y1 >= prof.page_heights.get(ln.page, prof.page_h) * 0.94
         if in_header or in_footer:
             if norm in prof.running_heads or PAGE_NUM_ONLY_RE.match(ln.text):
                 ln.kind = "furniture"
@@ -4515,6 +4649,8 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
     def flush_para():
         nonlocal para
         if para:
+            if out and re.match(r"^\s*(?:[-+*]|\d+[.)])\s", out[-1]):
+                out.append("")  # end a list before starting independent prose
             out.append(reflow(para, word_forms))
             out.append("")
             para = []
@@ -4693,7 +4829,10 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
             else:
                 block.append(f"> *diagram, page {r['page'] + 1} — {len(labels)} labels*")
                 if labels:
-                    block.append("> Labels: " + " · ".join(labels))
+                    block.extend(["", "<details>",
+                                  "<summary>Extracted figure labels (not a chart interpretation)</summary>", ""])
+                    block.extend("- " + label for label in labels)
+                    block.extend(["", "</details>"])
             out.extend(block); out.append("")
             if r["caption"] is not None:
                 r["caption"].kind = "consumed"   # already printed above
@@ -5643,6 +5782,8 @@ def main():
     if args.figure_dir:
         add_vector_figures(doc, lines, prof, pages)
         add_image_figures(doc, lines, prof, pages)
+    recover_captioned_layout(doc, lines, prof, pages)
+    mark_duplicate_margin_terms(lines, prof)
 
     # <author>#<title>[#index].pdf naming convention (from book-cleaner-cli)
     # and explicit flags override whatever the book itself says.

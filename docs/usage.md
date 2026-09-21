@@ -204,3 +204,24 @@ The current audit fields indicate generation state, not measured accuracy.
 There is no automatic confidence threshold or model-selection benchmark built
 into the CLI. Contradiction, coverage and cross-view checks are proposed in the
 evaluation document; they are not yet implemented.
+
+
+### Report layouts and book running headers
+
+The PDF pipeline uses per-page dimensions for header/footer detection, including
+books with a small cover and larger interior pages. A section/chapter label paired
+with a page number on the same header baseline provides additional evidence for
+removing a running header. Small margin terms are suppressed only when the same
+phrase appears in nearby body text; unique sidebar content is retained.
+
+For ruled reports, isolated figure/table numbers above a horizontal rule and a
+source line below provide region boundaries. Tables within these bounds use PDF
+cell geometry; charts remain figures rather than becoming false tables. Prose
+columns around these regions are ordered separately. Use `--figure-dir figures`
+to save and link chart crops. Extracted figure labels appear in a collapsible list,
+explicitly labeled as transcription rather than chart interpretation.
+
+This additional detector is conservative: it requires the caption/rule/source
+pattern and currently skips rotated pages. It does not solve arbitrary report
+layouts or every sidebar. Verify important tables and chart relationships against
+the source.
