@@ -4,7 +4,7 @@
 
 <h1 align="center">pdf2md</h1>
 <p align="center"><strong>Keep the words. Recover the structure. Better context. Save on tokens.</strong></p>
-<p align="center">Turn books, research papers, and everyday documents in PDF, EPUB, and DOCX into clean, readable Markdown for archiving, agents and Graph RAG using page layout automations.</p>
+<p align="center">Turn books, research papers, and everyday documents in PDF, EPUB, and DOCX into clean, readable Markdown for archiving, agents and Graph RAG using intricate page layout and document pipelines.</p>
 
 <p align="center">
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-10b981" alt="Version 0.2.0"></a>
