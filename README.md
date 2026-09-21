@@ -23,9 +23,6 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-pdf2md turns PDF, EPUB, and DOCX files into Markdown using typography and page
-layout to recover structure. It runs locally with PyMuPDF; no API key is needed.
-
 The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
 an explicit document tree. Optional Tesseract OCR repairs selected regions, including rotated pages.
 EPUB and DOCX use their own structural readers; LibreOffice handles older office
