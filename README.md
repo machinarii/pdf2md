@@ -25,6 +25,9 @@
 
 The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
 an explicit document tree. Optional Tesseract OCR repairs selected regions, including rotated pages.
+Optional AI computer vision interprets and describes complex diagrams and charts
+to provide additional context for agents and RAG, using a user-selected vision model.
+Descriptions remain linked to source images for review.
 EPUB and DOCX use their own structural readers; LibreOffice handles older office
 formats. The converter ships as one Python file with no required model download.
 
