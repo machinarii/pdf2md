@@ -19,6 +19,89 @@ class ExtendedQuality(unittest.TestCase):
         return self.m.Line(0, text, *bbox, 12, ('Helvetica',), False, False, False, 0,
                            style=('Helvetica', 12))
 
+    def test_mixed_page_sizes_remove_section_header_but_keep_body_numbers(self):
+        with pymupdf.open() as doc:
+            doc.new_page(width=250, height=320)
+            page = doc.new_page(width=600, height=800)
+            page.insert_text((40, 50), 'Section 1.1.', fontsize=11)
+            page.insert_text((150, 50), 'What Is Intelligence?', fontsize=11)
+            page.insert_text((540, 50), '3', fontsize=11)
+            for j in range(10):
+                page.insert_text((100, 130+j*20), 'Body text stays intact with useful numbers.', fontsize=11)
+            page.insert_text((100, 360), '42', fontsize=11)
+            lines = self.m.extract_lines(doc, [0, 1])
+            prof = self.m.build_profile(lines, doc, [0, 1])
+            self.m.classify(lines, prof)
+            self.assertTrue(all(ln.kind == 'furniture' for ln in lines if ln.y0 < 60))
+            self.assertNotEqual(next(ln for ln in lines if ln.text == '42').kind, 'furniture')
+
+    def test_margin_echo_removed_only_with_nearby_matching_text(self):
+        lines = [self.line('The total Turing test examines perception and physical interaction.',
+                           (100, 100+j*16, 500, 112+j*16)) for j in range(8)]
+        echo = self.line('TOTAL TURING TEST', (20, 105, 90, 112)); echo.size = 7
+        unique = self.line('UNIQUE SIDEBAR', (20, 140, 90, 147)); unique.size = 7
+        lines += [echo, unique]
+        prof = self.m.Profile(); prof.body_size = 12; prof.line_pitch = 16
+        self.m.mark_duplicate_margin_terms(lines, prof)
+        self.assertEqual(echo.kind, 'consumed')
+        self.assertEqual(unique.kind, 'body')
+
+    def test_top_captioned_chart_keeps_two_column_prose_before_image(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=600, height=800)
+            for j in range(8):
+                page.insert_text((50, 70+j*15), f'Left paragraph line {j} has context.', fontsize=10)
+                page.insert_text((325, 70+j*15), f'Right paragraph line {j} continues.', fontsize=10)
+            page.insert_text((50, 250), 'FIGURE 4', fontsize=10)
+            page.draw_line((50, 256), (550, 256))
+            page.insert_text((50, 280), 'Variation across occupations', fontsize=12)
+            for j in range(6):
+                page.draw_rect((80+j*60, 350-j*4, 100+j*60, 450))
+                page.insert_text((80+j*60, 470), str(j), fontsize=10)
+            page.insert_text((50, 510), 'Source: synthetic example', fontsize=9)
+            lines = self.m.extract_lines(doc, [0]); prof = self.m.build_profile(lines, doc, [0])
+            self.m.classify(lines, prof)
+            self.m.recover_captioned_layout(doc, lines, prof, [0])
+            self.assertEqual(len(prof.figure_regions), 1)
+            figure_index = next(i for i, ln in enumerate(lines) if ln.text == 'FIGURE 4')
+            self.assertTrue(all(i < figure_index for i, ln in enumerate(lines)
+                                if ln.text.startswith(('Left paragraph', 'Right paragraph'))))
+            region = prof.figure_regions[0]
+            self.assertTrue(all(ln.kind == 'figure_text' for ln in region['lines']))
+            self.assertTrue(any(ln.text == '0' for ln in region['lines']))
+
+    def test_top_captioned_ruled_table_preserves_header_and_cells(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=600, height=800)
+            page.insert_text((50, 100), 'TABLE 1', fontsize=10)
+            page.draw_line((50, 106), (550, 106))
+            page.insert_text((50, 125), 'Occupational statistics', fontsize=12)
+            rows = [('Occupation', 'Wage', 'Potential', 'Education'),
+                    ('Food workers', '$23000', '91%', 'School'),
+                    ('Programmers', '$85000', '38%', 'Degree'),
+                    ('Analysts', '$92000', '4%', 'Degree')]
+            for j,row in enumerate(rows):
+                for k,cell in enumerate(row):
+                    page.draw_rect((50+k*125, 150+j*30, 175+k*125, 180+j*30))
+                    page.insert_text((55+k*125, 170+j*30), cell, fontsize=9)
+            page.insert_text((50, 300), 'Source: synthetic example', fontsize=9)
+            lines = self.m.extract_lines(doc, [0]); prof = self.m.build_profile(lines, doc, [0])
+            self.m.classify(lines, prof)
+            self.m.recover_captioned_layout(doc, lines, prof, [0])
+            table = next(ln.table for ln in lines if ln.text == 'Food workers')
+            self.assertEqual(table['cols'], 4)
+            self.assertEqual(table['grid'][0][0], 'Occupation')
+            self.assertEqual(table['grid'][1][2], '91%')
+            self.assertTrue(all(ln.kind == 'table_cell' for ln in lines if ln.text in rows[0]))
+
+    def test_body_after_list_is_not_a_lazy_list_continuation(self):
+        item = self.line('robotics to manipulate objects', (100, 100, 450, 112))
+        item.kind = 'list_item'
+        body = self.line('These disciplines compose the field.', (100, 140, 450, 152))
+        prof = self.m.Profile(); prof.body_size = 12; prof.line_pitch = 16
+        result = self.m.assemble([item, body], prof, make_toc=False)
+        self.assertIn('robotics to manipulate objects\n\nThese disciplines', result)
+
     def image_bytes(self):
         with pymupdf.open() as source:
             page = source.new_page(width=600, height=400)

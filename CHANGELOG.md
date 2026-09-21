@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Use each PDF page's dimensions for header/footer detection; remove section-header rows paired with folios even when titles occur infrequently.
+- Suppress small margin terms only when nearby body text repeats the same phrase.
+- Recover ruled report tables and charts with captions above and source lines below; preserve surrounding column order and keep extracted figure labels in collapsible lists.
+
+
 - Add `--ollama-host` for user-selected visual models on remote Ollama servers.
 - Document six tested visual model tags, accuracy failures, timing limits and the absence of calibrated confidence scores.
 
