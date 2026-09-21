@@ -4,7 +4,7 @@
 
 <h1 align="center">pdf2md</h1>
 <p align="center"><strong>Keep the words. Recover the structure. Better context. Save on tokens.</strong></p>
-<p align="center">Turn books, research papers, and everyday documents in PDF, EPUB, and DOCX into clean, readable Markdown for archiving, agents and Graph RAG using intricate page layout and document pipelines.</p>
+<p align="center">Turn books, research papers, and everyday documents in PDF, EPUB, and DOCX into clean, readable Markdown for archiving, agents and Graph RAG using an intricate document and layout pipeline.</p>
 
 <p align="center">
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-10b981" alt="Version 0.2.0"></a>
@@ -23,7 +23,7 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-The PDF pipeline combines PyMuPDF extraction, document-specific heuristics, and
+The document and layout pipeline combines PyMuPDF extraction, document-specific heuristics, and
 an explicit document tree. Optional Tesseract OCR repairs selected regions, including rotated pages.
 Optional AI computer vision interprets and describes complex diagrams and charts
 to provide additional context for agents and RAG, using a user-selected vision model.
