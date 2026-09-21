@@ -33,7 +33,7 @@ formats. The converter ships as one Python file with no required model download.
 
 <p align="center">
   <a href="docs/assets/pipeline.png">
-    <img src="docs/assets/pipeline.png" width="560" alt="pdf2md pipeline: extract text and geometry; optionally OCR damaged text; identify document type and learn styles; build content structure; reflow and render; output Markdown, metadata, and optional audit artifacts.">
+    <img src="docs/assets/pipeline.png" width="560" alt="pdf2md document and layout pipeline for PDF, EPUB, and DOCX: extract text and structure; optionally OCR scanned or damaged PDF regions; identify document type and learn styles; build content structure; optionally describe complex charts and diagrams with a user-selected vision model; reflow and render; output Markdown, metadata, figure links, and optional audit artifacts. AI descriptions require source review.">
   </a>
 </p>
 
