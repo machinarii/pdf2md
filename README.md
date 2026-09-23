@@ -64,11 +64,15 @@ On Windows, activate with `.venv\Scripts\activate` instead.
 python3 pdf2md_all.py paper.pdf --no-toc -o paper.md
 python3 pdf2md_all.py book.epub -o book.md
 python3 pdf2md_all.py document.docx -o document.md
+python3 pdf2md_all.py large.pdf --max-file-size 500MiB -o large.md
+python3 pdf2md_all.py photos.pdf --skip-mostly-images -o photos.md
 python3 pdf2md_all.py --version  # pdf2md 0.2.0
 ```
 
 Output includes inferred headings, reflowed text, YAML metadata, and a table of
 contents unless disabled. DOC, ODT, and RTF input additionally requires LibreOffice.
+Use `--max-file-size SIZE` to refuse oversized input before parsing; decimal
+(`MB`, `GB`) and binary (`MiB`, `GiB`) units are supported, as are raw bytes.
 Run `python3 pdf2md_all.py --help` for all options.
 
 ## Framework

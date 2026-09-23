@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `--max-file-size SIZE` to refuse oversized PDF and structured-document inputs before parsing.
+- Add geometry-only `--skip-mostly-images [RATIO]` detection and `--no-visual-ai`; batch conversion now skips photobooks and leaves AI figure interpretation off unless a model is explicitly supplied.
 - Use each PDF page's dimensions for header/footer detection; remove section-header rows paired with folios even when titles occur infrequently.
 - Suppress small margin terms only when nearby body text repeats the same phrase.
 - Recover ruled report tables and charts with captions above and source lines below; preserve surrounding column order and keep extracted figure labels in collapsible lists.
