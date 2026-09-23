@@ -5549,6 +5549,16 @@ def main_structured(args, src: Path) -> None:
         sys.exit(f"{src.name}: malformed {ext.lstrip('.').upper()} — its XML does not parse ({e}).")
     if not blocks:
         sys.exit(f"{src.name}: no readable content found in the container.")
+    if args.skip_mostly_images is not None:
+        image_ratio = structured_image_ratio(blocks)
+        if image_ratio >= args.skip_mostly_images:
+            zf = meta.pop("zip", None)
+            if zf is not None:
+                zf.close()
+            print(f"skipped {src.name}: {image_ratio:.0%} of content blocks are images "
+                  f"(threshold {args.skip_mostly_images:.0%}); no visual AI was used",
+                  file=sys.stderr)
+            raise SystemExit(3)
     prof = Profile()
     prof.source_name, prof.page_count = src.name, 0
     kind, ev = classify_structured(meta, blocks)
@@ -5685,12 +5695,115 @@ def write_output(out: Path, md: str) -> None:
         sys.exit(f"cannot write {out}: {e}")
 
 
+_FILE_SIZE_RE = re.compile(r"^\s*(\d+)\s*([kmgt]?i?b)?\s*$", re.I)
+_FILE_SIZE_MULTIPLIERS = {
+    "": 1,
+    "b": 1,
+    "kb": 1_000,
+    "mb": 1_000_000,
+    "gb": 1_000_000_000,
+    "tb": 1_000_000_000_000,
+    "kib": 1 << 10,
+    "mib": 1 << 20,
+    "gib": 1 << 30,
+    "tib": 1 << 40,
+}
+
+
+def parse_file_size(value: str) -> int:
+    """Parse a positive byte count with an optional decimal or binary unit."""
+    match = _FILE_SIZE_RE.fullmatch(value)
+    if not match:
+        raise argparse.ArgumentTypeError(
+            "expected a positive size such as 500MB, 2GiB, or a byte count"
+        )
+    amount = int(match.group(1))
+    if amount <= 0:
+        raise argparse.ArgumentTypeError("size must be greater than zero")
+    return amount * _FILE_SIZE_MULTIPLIERS[(match.group(2) or "").lower()]
+
+
+def format_file_size(size: int) -> str:
+    """Render a byte count compactly for command-line diagnostics."""
+    for suffix, divisor in (("TiB", 1 << 40), ("GiB", 1 << 30),
+                            ("MiB", 1 << 20), ("KiB", 1 << 10)):
+        if size >= divisor:
+            return f"{size / divisor:.2f} {suffix}"
+    return f"{size} bytes"
+
+
+def parse_ratio(value: str) -> float:
+    """Parse a fraction in the inclusive range 0..1."""
+    try:
+        ratio = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("expected a ratio from 0 to 1") from None
+    if not 0 <= ratio <= 1:
+        raise argparse.ArgumentTypeError("expected a ratio from 0 to 1")
+    return ratio
+
+
+def _rectangle_union_area(rectangles: list[tuple[float, float, float, float]]) -> float:
+    """Return exact union area for a small collection of axis-aligned rectangles."""
+    xs = sorted({x for rect in rectangles for x in (rect[0], rect[2])})
+    area = 0.0
+    for left, right in zip(xs, xs[1:]):
+        if right <= left:
+            continue
+        spans = sorted((top, bottom) for x0, top, x1, bottom in rectangles
+                       if x0 < right and x1 > left and bottom > top)
+        covered = 0.0
+        if spans:
+            start, end = spans[0]
+            for top, bottom in spans[1:]:
+                if top > end:
+                    covered += end - start
+                    start, end = top, bottom
+                else:
+                    end = max(end, bottom)
+            covered += end - start
+        area += (right - left) * covered
+    return area
+
+
+def image_dominant_page_ratio(doc, pages, coverage_threshold: float = 0.5) -> float:
+    """Measure image-dominant pages using geometry only, without vision AI."""
+    dominant = 0
+    inspected = 0
+    for pno in pages:
+        page = doc[pno]
+        page_rect = page.rect
+        page_area = page_rect.width * page_rect.height
+        if page_area <= 0:
+            continue
+        rectangles = []
+        for info in page.get_image_info():
+            box = pymupdf.Rect(info["bbox"]) & page_rect
+            if not box.is_empty:
+                rectangles.append((box.x0, box.y0, box.x1, box.y1))
+        coverage = _rectangle_union_area(rectangles) / page_area if rectangles else 0.0
+        dominant += coverage >= coverage_threshold
+        inspected += 1
+    return dominant / inspected if inspected else 0.0
+
+
+def structured_image_ratio(blocks) -> float:
+    """Approximate image dominance for pageless EPUB/DOCX content."""
+    meaningful = [b for b in blocks if b.kind == "image" or b.text.strip() or b.rows]
+    return (sum(b.kind == "image" for b in meaningful) / len(meaningful)
+            if meaningful else 0.0)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=f"pdf2md {__version__}")
     ap.add_argument("input", help="PDF, EPUB, DOCX, DOC, ODT or RTF")
     ap.add_argument("-o", "--output")
+    ap.add_argument("--max-file-size", type=parse_file_size, metavar="SIZE",
+                    help="refuse inputs larger than SIZE (bytes, KB/MB/GB, or KiB/MiB/GiB)")
+    ap.add_argument("--skip-mostly-images", nargs="?", const=0.6, type=parse_ratio,
+                    metavar="RATIO", help="skip image-dominant documents (default ratio: 0.6)")
     ap.add_argument("--pages", default="", help="e.g. 44-120 or 1,5,9 (1-based)")
     ap.add_argument("--profile", action="store_true", help="show detection, exit")
     ap.add_argument("--glyph-report", action="store_true")
@@ -5704,6 +5817,8 @@ def main():
                     help="Ollama vision model to transcribe or describe each figure crop "
                          "(any installed vision-capable tag, e.g. qwen3.8:27b); "
                          "requires --figure-dir; omitted by default")
+    ap.add_argument("--no-visual-ai", "--no-figure-vlm", action="store_true",
+                    help="disable AI figure descriptions even if --figure-vlm is also supplied")
     ap.add_argument("--ollama-host", default="http://localhost:11434", metavar="URL",
                     help="Ollama server for --figure-vlm (default: http://localhost:11434)")
     ap.add_argument("--artifacts", metavar="DIR",
@@ -5723,6 +5838,8 @@ def main():
                          "back matter (references, index, colophon)")
     args = ap.parse_args()
 
+    if args.no_visual_ai:
+        args.figure_vlm = None
     if args.figure_vlm and not args.figure_dir:
         ap.error("--figure-vlm needs --figure-dir: the model transcribes the "
                  "cropped figure images, so there must be somewhere to crop them to")
@@ -5731,6 +5848,16 @@ def main():
     src = Path(args.input)
     if not src.exists():
         sys.exit(f"not found: {src}")
+    if args.max_file_size is not None and src.is_file():
+        try:
+            input_size = src.stat().st_size
+        except OSError as e:
+            sys.exit(f"cannot inspect {src}: {e}")
+        if input_size > args.max_file_size:
+            sys.exit(
+                f"refusing to convert {src.name}: file is {format_file_size(input_size)}, "
+                f"above --max-file-size {format_file_size(args.max_file_size)}"
+            )
     if args.ocr != "off" and not args.artifacts:
         ap.error("--ocr auto requires --artifacts DIR to retain the repair audit")
     if args.ocr != "off" and not shutil.which("tesseract"):
@@ -5746,6 +5873,15 @@ def main():
     except ValueError as e:
         doc.close()
         sys.exit(str(e))
+
+    if args.skip_mostly_images is not None:
+        image_ratio = image_dominant_page_ratio(doc, pages)
+        if image_ratio >= args.skip_mostly_images:
+            doc.close()
+            print(f"skipped {src.name}: {image_ratio:.0%} of selected pages are "
+                  f"image-dominant (threshold {args.skip_mostly_images:.0%}); "
+                  "no visual AI was used", file=sys.stderr)
+            raise SystemExit(3)
 
     lines = extract_lines(doc, pages, preserve_private=args.ocr == "auto")
     repairs = selective_ocr(doc, lines, pages, args.ocr_language) if args.ocr == "auto" else []

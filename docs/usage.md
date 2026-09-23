@@ -15,6 +15,9 @@ python3 pdf2md_all.py in.pdf --profile                # type + evidence, detecti
 python3 pdf2md_all.py in.pdf --doc-type deck          # override the classifier
 python3 pdf2md_all.py in.pdf --glyph-report           # unmapped non-ASCII with context
 python3 pdf2md_all.py in.pdf --pages 44-120           # subset (1-based, inclusive)
+python3 pdf2md_all.py in.pdf --max-file-size 500MiB   # refuse larger input before parsing
+python3 pdf2md_all.py in.pdf --skip-mostly-images     # skip photobooks (60% default)
+python3 pdf2md_all.py in.pdf --no-visual-ai           # never call a vision model
 python3 pdf2md_all.py in.pdf --artifacts DIR          # tree, provenance, repairs, profile, blocks, pages
 python3 pdf2md_all.py scan.pdf --ocr auto --ocr-language eng --artifacts DIR
 python3 pdf2md_all.py in.pdf --emit-json blocks.json  # typed blocks for RAG chunking
@@ -25,6 +28,19 @@ python3 pdf2md_all.py in.pdf --title T --author A --author B
 python3 pdf2md_all.py in.pdf --no-toc
 python3 pdf2md_all.py in.pdf --math-delims            # wrap math-heavy lines in $$
 ```
+
+`--max-file-size` applies to every supported input format. Omit it for no size
+limit. A bare integer is bytes; `KB`, `MB`, `GB`, and `TB` use decimal units,
+while `KiB`, `MiB`, `GiB`, and `TiB` use binary units. A file exactly at the
+configured limit is accepted.
+
+`--skip-mostly-images [RATIO]` exits with status 3 and creates no Markdown when
+the document meets the configured image-dominance threshold (default `0.6`).
+For PDFs, a page is image-dominant when raster images cover at least half its
+area; EPUB and DOCX use the share of meaningful content blocks that are images.
+This check uses document geometry and metadata only—it does not call AI or try
+to interpret the images. `--no-visual-ai` (also `--no-figure-vlm`) overrides a
+supplied `--figure-vlm` option, which is useful in shared batch configurations.
 
 The filename convention `<author>#<title>[#index].pdf` is recognised for metadata. `--artifacts` writes what every stage decided — `blocks.jsonl` has every line with kind, regime, level, geometry and text — which is how to debug: read the decision log, don't add prints.
 

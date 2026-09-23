@@ -104,6 +104,67 @@ class ErrorPathTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(out.exists())
 
+    def test_max_file_size_refuses_oversized_input_without_output(self) -> None:
+        out = self.tmp / "too-large.md"
+        limit = self.pdf.stat().st_size - 1
+        self.assertClean(
+            run(str(self.pdf), "--max-file-size", str(limit), "-o", str(out)),
+            "refusing to convert", "--max-file-size",
+        )
+        self.assertFalse(out.exists())
+
+    def test_max_file_size_accepts_exact_limit(self) -> None:
+        out = self.tmp / "exact.md"
+        result = run(
+            str(self.pdf), "--max-file-size", str(self.pdf.stat().st_size),
+            "-o", str(out),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(out.exists())
+
+    def test_max_file_size_applies_before_structured_conversion(self) -> None:
+        oversized = self.tmp / "book.epub"
+        oversized.write_bytes(b"not parsed because the size check runs first")
+        self.assertClean(
+            run(str(oversized), "--max-file-size", "1B"),
+            "refusing to convert", "--max-file-size",
+        )
+
+    def test_max_file_size_rejects_invalid_value(self) -> None:
+        self.assertClean(
+            run(str(self.pdf), "--max-file-size", "12XB"),
+            "--max-file-size", "expected a positive size",
+        )
+
+    def test_skip_mostly_images_uses_geometry_without_writing_output(self) -> None:
+        photo = self.tmp / "photobook.pdf"
+        doc = pymupdf.open()
+        page = doc.new_page(width=200, height=200)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 200), False)
+        pix.clear_with(180)
+        page.insert_image(page.rect, pixmap=pix)
+        doc.save(photo)
+        doc.close()
+        out = self.tmp / "photobook.md"
+        result = run(str(photo), "--skip-mostly-images", "-o", str(out))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn("image-dominant", result.stderr)
+        self.assertIn("no visual AI was used", result.stderr)
+        self.assertFalse(out.exists())
+
+    def test_skip_mostly_images_does_not_skip_text_document(self) -> None:
+        out = self.tmp / "text.md"
+        result = run(str(self.pdf), "--skip-mostly-images", "-o", str(out))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(out.exists())
+
+    def test_no_visual_ai_overrides_figure_model_without_figure_dir(self) -> None:
+        out = self.tmp / "no-ai.md"
+        result = run(str(self.pdf), "--figure-vlm", "unused:model", "--no-visual-ai",
+                     "-o", str(out))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(out.exists())
+
     def test_non_zip_epub(self) -> None:
         bad = self.tmp / "fake.epub"
         bad.write_text("not a zip\n")
