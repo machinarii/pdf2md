@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Sanitize unresolved private-use and replacement glyphs after selective OCR, and rejoin printed word-break hyphens that crossed a false paragraph boundary.
+- Correct corpus-audit false positives for percent-encoded figure paths, intentional Markdown hard breaks, fenced code, and intentionally absent visual-AI descriptions.
+- Extract embedded EPUB and DOCX images beside Markdown by default and emit correctly relative, URI-encoded links.
+- Omit empty footnote definitions produced by misclassified numeric diagram labels.
 - Add `--max-file-size SIZE` to refuse oversized PDF and structured-document inputs before parsing.
 - Add geometry-only `--skip-mostly-images [RATIO]` detection and `--no-visual-ai`; batch conversion now skips photobooks and leaves AI figure interpretation off unless a model is explicitly supplied.
 - Use each PDF page's dimensions for header/footer detection; remove section-header rows paired with folios even when titles occur infrequently.

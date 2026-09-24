@@ -2627,6 +2627,29 @@ def repair_line(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
 
+def sanitize_unrepaired_characters(lines: list[Line]) -> int:
+    """Remove undecodable placeholders left after selective OCR has run.
+
+    OCR deliberately receives private-use characters as evidence. Rejected
+    repairs must not leak those font-specific slots or U+FFFD into Markdown;
+    source provenance still retains the original extracted text.
+    """
+    changed = 0
+    for line in lines:
+        text = line.text
+        if not PRIVATE_USE_RE.search(text) and "\ufffd" not in text:
+            continue
+        lead = len(text) - len(text.lstrip())
+        leading_private = PRIVATE_USE_RE.match(text, lead)
+        text = PRIVATE_USE_RE.sub(" ", text).replace("\ufffd", " ")
+        text = re.sub(r"[ \t]+", " ", text).strip()
+        if leading_private and text:
+            text = "• " + text
+        line.text = text
+        changed += 1
+    return changed
+
+
 # ===========================================================================
 # DATA MODEL
 # ===========================================================================
@@ -4945,7 +4968,10 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
 
         if k == "footnote":
             flush_para(); flush_code()
-            body = re.sub(r"^\s*(\d{1,3}|[*†‡§¶])\s*", "", text)
+            body = re.sub(r"^\s*(\d{1,3}|[*†‡§¶])\s*", "", text).strip()
+            if not body:
+                prev = ln
+                continue
             if ln.fn_num:
                 label = fn_label(ln.page, ln.fn_num)
             else:
@@ -5006,9 +5032,38 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
 
     body_md = "\n".join(out)
     body_md = re.sub(r"\n{3,}", "\n\n", body_md).strip() + "\n"
+    body_md = repair_markdown_dehyphenation(body_md, word_forms)
 
     head = build_head(prof, lines, toc if make_toc else [], all_meta)
     return head + "\n---\n\n" + body_md
+
+
+def repair_markdown_dehyphenation(markdown: str, word_forms: set[str]) -> str:
+    """Rejoin printed word breaks that classification split into paragraphs."""
+    lines = markdown.splitlines()
+    repaired = []
+    in_fence = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        if (not in_fence and i + 2 < len(lines) and line.endswith("-")
+                and not lines[i + 1].strip() and lines[i + 2]
+                and lines[i + 2][0].islower()
+                and not re.match(r"^(?:#|>|\s*[-+*]\s|\s*\d+[.)]\s|\|)", line)):
+            left = re.search(r"([^\W\d_]+)-$", line)
+            right = re.match(r"([^\W\d_]+)", lines[i + 2])
+            if left and right:
+                compound = (left.group(1) + "-" + right.group(1)).casefold()
+                joiner = "-" if compound in word_forms else ""
+                repaired.append(line[:left.start()] + left.group(1) + joiner
+                                + lines[i + 2])
+                i += 3
+                continue
+        repaired.append(line)
+        i += 1
+    return "\n".join(repaired).strip() + "\n"
 
 
 def build_head(prof: Profile, lines: list[Line], toc: list, all_meta: list) -> str:
@@ -5383,7 +5438,8 @@ def _shim(text: str, level: int = 0, kind: str = "body") -> "Line":
 
 
 def render_structured(meta: dict, blocks: list, prof: "Profile", *, make_toc=True,
-                      figure_dir: Path | None = None) -> str:
+                      figure_dir: Path | None = None,
+                      output_dir: Path | None = None) -> str:
     # ---- title: metadata, else a Title-styled block, else a lone level-1 heading
     title = (meta.get("title") or "").strip()
     title_blocks = [b for b in blocks if b.kind == "title"]
@@ -5483,7 +5539,11 @@ def render_structured(meta: dict, blocks: list, prof: "Profile", *, make_toc=Tru
                 # links pointed at it.
                 flat = re.sub(r"[^A-Za-z0-9._-]+", "_", b.src.lstrip("/")).lstrip("._")
                 dest = figure_dir / flat
-                dest.write_bytes(z.read(b.src)); target = f"{figure_dir.name}/{dest.name}"
+                dest.write_bytes(z.read(b.src))
+                import os
+                from urllib.parse import quote
+                target = quote(Path(os.path.relpath(dest.resolve(),
+                                                    (output_dir or Path.cwd()).resolve())).as_posix())
             out.append(f"![{b.text or Path(b.src).stem}]({target})"); out.append("")
         elif k == "footnote":
             pending_notes.append(b)
@@ -5575,8 +5635,12 @@ def main_structured(args, src: Path) -> None:
         if meta.get("toc"):
             print(f"  contents entries   {len(meta['toc'])}")
         return
-    fig_dir = Path(args.figure_dir) if args.figure_dir else None
-    md = render_structured(meta, blocks, prof, make_toc=not args.no_toc, figure_dir=fig_dir)
+    out = Path(args.output) if args.output else src.with_suffix(".md")
+    has_embedded_images = any(b.kind == "image" and b.src for b in blocks)
+    fig_dir = (Path(args.figure_dir) if args.figure_dir else
+               out.parent / f"{out.stem}.assets" if has_embedded_images else None)
+    md = render_structured(meta, blocks, prof, make_toc=not args.no_toc,
+                           figure_dir=fig_dir, output_dir=out.parent)
     # the reader hands the live archive to the renderer for figure extraction;
     # nothing closed it, which leaks a descriptor for any batch caller
     zf = meta.pop("zip", None)
@@ -5591,7 +5655,6 @@ def main_structured(args, src: Path) -> None:
         m2 = re.search(r"^# (References|Bibliography|Index|Glossary|Notes)\b", body, re.M)
         if m2: body = body[:m2.start()]
         md = parts[0] + "\n---\n\n" + body
-    out = Path(args.output) if args.output else src.with_suffix(".md")
     if out.resolve() == src.resolve():
         sys.exit(f"refusing to overwrite the input file: {out}")
     write_output(out, md)
@@ -5885,11 +5948,17 @@ def main():
 
     lines = extract_lines(doc, pages, preserve_private=args.ocr == "auto")
     repairs = selective_ocr(doc, lines, pages, args.ocr_language) if args.ocr == "auto" else []
+    sanitized = sanitize_unrepaired_characters(lines) if args.ocr == "auto" else 0
+    if sanitized:
+        lines = [line for line in lines if line.text.strip()]
     if repairs:
         audit_dir = Path(args.artifacts)
         audit_dir.mkdir(parents=True, exist_ok=True)
         (audit_dir / "repairs.json").write_text(json.dumps(repairs, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"OCR: {sum(r['status'] == 'accepted' for r in repairs)}/{len(repairs)} regions accepted", file=sys.stderr)
+    if sanitized:
+        print(f"OCR: sanitized unresolved glyph placeholders on {sanitized} lines",
+              file=sys.stderr)
     if not lines:
         scope = (f"any of {doc.page_count} pages" if len(pages) == doc.page_count
                  else f"the {len(pages)} selected of {doc.page_count} pages")

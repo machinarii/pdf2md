@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from urllib.parse import unquote
 
 
 CHECKS = {
@@ -22,7 +23,6 @@ CHECKS = {
     "trailing_whitespace": (1, "Trailing whitespace remains"),
     "short_prose_fragment": (1, "Many short non-structural lines may be unreflowed"),
     "malformed_table": (2, "A pipe-table row has inconsistent cell counts"),
-    "visual_context_unavailable": (1, "A saved figure lacks AI-generated context"),
 }
 
 
@@ -37,14 +37,17 @@ def inspect(path: Path) -> tuple[Counter, dict]:
         if len(examples[kind]) < 3:
             examples[kind].append({"line": line, "text": sample[:180]})
 
+    in_fence = False
     for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
         if "\ufffd" in line:
             add("replacement_chars", i, line)
         if any(0xE000 <= ord(c) <= 0xF8FF for c in line):
             add("private_use_chars", i, line)
         if re.fullmatch(r"\s*\d{1,4}\s*", line):
             add("standalone_page_number", i, line)
-        if line.rstrip() != line:
+        if not in_fence and line.rstrip() != line and not line.endswith("  "):
             add("trailing_whitespace", i, line)
         if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]-$", line) and i < len(lines) and re.match(r"^[a-zà-öø-ÿ]", lines[i]):
             add("possible_broken_hyphen", i, line + " / " + lines[i])
@@ -86,13 +89,17 @@ def inspect(path: Path) -> tuple[Counter, dict]:
     if prose >= 20 and short / prose > 0.22:
         add("short_prose_fragment", 0, f"{short}/{prose} prose lines are short fragments")
 
+    in_fence = False
     for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         for match in re.finditer(r"!\[[^]]*\]\(([^)]+)\)", line):
-            target = match.group(1).replace("%20", " ")
+            target = unquote(match.group(1))
             if "://" not in target and not (path.parent / target).resolve().exists():
                 add("broken_image_link", i, target)
-    if "*diagram, page " in text and "AI-generated visual context" not in text:
-        add("visual_context_unavailable")
 
     table_rows = []
     for i, line in enumerate(lines, 1):
@@ -142,8 +149,7 @@ def main() -> int:
                "1. Fix corruption and data-loss signals: replacement/private-use glyphs and broken figure links.",
                "2. Tighten output validity: balanced fences, consistent tables, and heading-level continuity.",
                "3. Improve furniture removal and paragraph reflow using the worst-file samples in `audit.json`.",
-               "4. Review missing visual descriptions separately from text cleanliness; retain the source crop for verification.",
-               "5. Turn confirmed patterns into minimal regression fixtures before changing heuristics.", "",
+               "4. Turn confirmed patterns into minimal regression fixtures before changing heuristics.", "",
                "This report flags candidates. It does not treat every flag as a converter defect; source PDFs and authored Markdown vary."]
     (args.output / "REPORT.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     print(f"audited {len(files)} files -> {args.output}")

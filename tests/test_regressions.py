@@ -149,6 +149,17 @@ class StructuredRegressions(unittest.TestCase):
         self.assertEqual(md.count("SURVIVOR"), 2, md)
         self.assertNotIn("****", md)
 
+    def test_embedded_epub_image_is_extracted_and_linked_by_default(self):
+        src = self.tmp / "illustrated.epub"
+        epub(src, [("c1.xhtml", '<h1>Chapter</h1><img src="images/figure one.png"/>')],
+             extra={"OEBPS/images/figure one.png": b"image bytes"})
+        md = self.convert(src)
+        self.assertIn("illustrated.assets/OEBPS_images_figure_one.png", md)
+        self.assertEqual(
+            (self.tmp / "illustrated.assets" / "OEBPS_images_figure_one.png").read_bytes(),
+            b"image bytes",
+        )
+
     def test_nested_table_keeps_the_outer_cells(self):
         src = self.tmp / "nested.epub"
         epub(src, [("c1.xhtml",
@@ -216,6 +227,44 @@ class CoreRegressions(unittest.TestCase):
 
     def tearDown(self):
         self._tmp.cleanup()
+
+    def test_rejected_ocr_glyphs_are_sanitized_before_rendering(self):
+        line = self.m.Line(0, "\ue001 damaged \ufffd text", 0, 0, 100, 10, 10,
+                           ("SubsetFont",), False, False, False, 0)
+        self.assertEqual(self.m.sanitize_unrepaired_characters([line]), 1)
+        self.assertEqual(line.text, "• damaged text")
+        self.assertFalse(self.m.PRIVATE_USE_RE.search(line.text))
+        self.assertNotIn("\ufffd", line.text)
+
+    def test_dehyphenates_plain_prose_split_by_false_paragraph_break(self):
+        md = "This refers to a specific sec-\n\ntion of the book.\n"
+        self.assertEqual(
+            self.m.repair_markdown_dehyphenation(md, set()),
+            "This refers to a specific section of the book.\n",
+        )
+
+    def test_dehyphenation_preserves_known_compound_and_code(self):
+        md = "A documented high-\n\nlevel result.\n\n```\ncode-\n\nword\n```\n"
+        got = self.m.repair_markdown_dehyphenation(md, {"high-level"})
+        self.assertIn("documented high-level result", got)
+        self.assertIn("code-\n\nword", got)
+
+    def test_numeric_only_footnote_does_not_emit_empty_definition(self):
+        line = self.m.Line(0, "2", 0, 0, 20, 10, 8, ("Times",),
+                           False, False, False, 0, kind="footnote", fn_num="2")
+        prof = self.m.Profile(doc_type="book", canonical_title="Test", source_name="test.pdf")
+        md = self.m.assemble([line], prof, make_toc=False)
+        self.assertNotIn("[^p1-2]:", md)
+
+    def test_auditor_resolves_percent_encoded_local_image_paths(self):
+        import runpy
+        inspect = runpy.run_path(str(ROOT / "tools" / "audit_markdown_quality.py"))["inspect"]
+        image = self.tmp / "figure, one.png"
+        image.write_bytes(b"png")
+        markdown = self.tmp / "book.md"
+        markdown.write_text("![figure](figure%2C%20one.png)\n", encoding="utf-8")
+        issues, _ = inspect(markdown)
+        self.assertNotIn("broken_image_link", issues)
 
     def test_year_led_heading_does_not_hijack_the_outline_spine(self):
         """"2019 Annual Review" tokenised as section 20, which advanced the
