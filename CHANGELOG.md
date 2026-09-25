@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Prefer trustworthy embedded PDF titles when cover typography is extracted as
+  separated glyphs or the inferred title swallows body text; otherwise use a
+  readable source-filename fallback for demonstrably corrupt titles.
+- Keep small tracked series/date labels and extraction-noise blocks out of book
+  subtitles, while retaining clean display-sized subtitles.
+- Extend the corpus auditor with corrupt and implausibly long title/subtitle
+  checks so front-matter regressions are visible across a converted library.
+- Keep OCR recovered from raster screenshots out of prose, absorb small labels
+  immediately outside detected figure bounds, and repair false paragraph
+  breaks after continuation words.
+- Deduplicate same-stem PDF/EPUB batch outputs by retaining the cleaner audited
+  Markdown result.
+
 - Sanitize unresolved private-use and replacement glyphs after selective OCR, and rejoin printed word-break hyphens that crossed a false paragraph boundary.
 - Correct corpus-audit false positives for percent-encoded figure paths, intentional Markdown hard breaks, fenced code, and intentionally absent visual-AI descriptions.
 - Extract embedded EPUB and DOCX images beside Markdown by default and emit correctly relative, URI-encoded links.

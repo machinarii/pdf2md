@@ -2709,6 +2709,7 @@ class Profile:
     outline: dict = field(default_factory=dict)
     acronyms: set = field(default_factory=set)
     canonical_title: str = ""
+    metadata_title: str = ""
     page_count: int = 0
     author_override: list = field(default_factory=list)
     doc_type: str = "book"
@@ -2991,6 +2992,7 @@ def band_ocr_styles(lines: list[Line]) -> None:
 
 def build_profile(lines: list[Line], doc, page_range) -> Profile:
     p = Profile()
+    p.metadata_title = re.sub(r"\s+", " ", str(doc.metadata.get("title", ""))).strip()
     p.page_w = doc[page_range[0]].rect.width
     p.page_h = doc[page_range[0]].rect.height
     p.page_heights = {n: doc[n].rect.height for n in page_range}
@@ -3682,17 +3684,55 @@ def add_image_figures(doc, lines, prof, pages):
                         and 0 <= l.y0 - box.y1 <= 3 * prof.line_pitch
                         and l.x1 >= box.x0 and l.x0 <= box.x1]
             caption = min(captions, key=lambda l: l.y0) if captions else None
+            members = [line for line in lines if line.page == pno and line is not caption
+                       and box.contains(pymupdf.Point((line.x0 + line.x1) / 2,
+                                                     (line.y0 + line.y1) / 2))
+                       and any(source.get("method") == "tesseract"
+                               for source in line.sources)]
             label = Line(pno, "", *bbox, prof.body_size, (), False, False, False, 0,
                          kind="figure_text", style=("Image", prof.body_size),
                          sources=[{"id": f"p{pno+1}-image{len(existing)}", "page": pno+1,
                                    "bbox": bbox, "text": "", "method": "image-region"}])
+            members.append(label)
             region = {"page": pno, "x0": box.x0, "y0": box.y0, "x1": box.x1,
-                      "y1": box.y1, "lines": [label], "caption": caption, "raster": True}
-            label.region = region
+                      "y1": box.y1, "lines": members, "caption": caption, "raster": True}
+            for member in members:
+                member.kind, member.region = "figure_text", region
             lines.append(label)
             prof.figure_regions.append(region)
             existing.append(region)
     reorder_columns(lines, {p: doc[p].rect.width for p in pages})
+
+
+def absorb_nearby_figure_labels(lines: list[Line], prof: Profile) -> int:
+    """Pull small labels just outside confirmed figure bounds into the figure."""
+    absorbed = 0
+    for region in prof.figure_regions:
+        halo = max(8.0, prof.line_pitch * 1.1)
+        box = pymupdf.Rect(*(region[k] for k in ("x0", "y0", "x1", "y1")))
+        search = box + (-halo, -halo, halo, halo)
+        caption = region.get("caption")
+        members = region["lines"]
+        for line in lines:
+            if line.page != region["page"] or line is caption or line in members:
+                continue
+            text = line.text.strip()
+            if (line.kind not in ("body", "heading", "code") or not text
+                    or len(text) > 18 or len(text.split()) > 3
+                    or line.size >= prof.body_size * 0.85):
+                continue
+            center = pymupdf.Point((line.x0 + line.x1) / 2, (line.y0 + line.y1) / 2)
+            if not search.contains(center) or box.contains(center):
+                continue
+            line.kind, line.region = "figure_text", region
+            members.append(line)
+            region["x0"] = min(region["x0"], line.x0)
+            region["y0"] = min(region["y0"], line.y0)
+            region["x1"] = max(region["x1"], line.x1)
+            region["y1"] = max(region["y1"], line.y1)
+            absorbed += 1
+        members.sort(key=lambda item: (item.y0, item.x0))
+    return absorbed
 
 
 def render_region(doc, region: dict, out_dir: Path, dpi: int = 200,
@@ -4143,7 +4183,22 @@ def classify(lines: list[Line], prof: Profile) -> None:
         best = prof.deck_meta["title"]
     elif prof.doc_type == "document" and prof.document_meta.get("title"):
         best = prof.document_meta["title"]
-    prof.canonical_title = R.smart_case(best, prof.acronyms)
+    inferred = R.smart_case(best, prof.acronyms)
+    # Display faces sometimes encode tracking as literal spaces, yielding
+    # titles such as "M E G A - Trends 2 0 2 6".  Embedded PDF metadata is
+    # preferable when the geometric inference is plainly damaged, absent, or
+    # has swallowed a paragraph.  Do not let generic/filename-like metadata
+    # replace an otherwise healthy title.
+    spaced_glyphs = len(re.findall(r"(?<!\w)[A-Za-z0-9](?!\w)", inferred))
+    metadata_ok = (3 <= len(prof.metadata_title) <= 180
+                   and not re.fullmatch(r"(?:untitled|document|microsoft word)",
+                                        prof.metadata_title, re.I))
+    inferred_bad = (not inferred or len(inferred) > 240 or spaced_glyphs >= 4
+                    or len(inferred.split()) > 35)
+    filename_title = Path(prof.source_name).stem.replace("_", " ").replace("-", " ").strip()
+    prof.canonical_title = (R.smart_case(prof.metadata_title, prof.acronyms)
+                            if metadata_ok and inferred_bad else
+                            filename_title if inferred_bad and filename_title else inferred)
     # demote the title lines we cut (edition, publisher) to metadata
     for pl in pages.values():
         for l in lines:
@@ -4824,7 +4879,10 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
                 continue                      # remainder of an emitted region
             flush_para(); flush_code()
             cap = r["caption"].text.strip() if r["caption"] else ""
-            labels = region_labels(r)
+            # OCR from screenshots mostly yields navigation chrome, product
+            # names, and isolated UI fragments. Keep it out of RAG prose;
+            # vector-diagram labels remain searchable in a collapsed block.
+            labels = [] if r.get("raster") else region_labels(r)
             block = [f"> **{cap}**" if cap else "> **Figure**"]
             img = None
             if figure_dir is not None and doc is not None:
@@ -5033,6 +5091,7 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
     body_md = "\n".join(out)
     body_md = re.sub(r"\n{3,}", "\n\n", body_md).strip() + "\n"
     body_md = repair_markdown_dehyphenation(body_md, word_forms)
+    body_md = repair_markdown_false_breaks(body_md)
 
     head = build_head(prof, lines, toc if make_toc else [], all_meta)
     return head + "\n---\n\n" + body_md
@@ -5064,6 +5123,30 @@ def repair_markdown_dehyphenation(markdown: str, word_forms: set[str]) -> str:
         repaired.append(line)
         i += 1
     return "\n".join(repaired).strip() + "\n"
+
+
+def repair_markdown_false_breaks(markdown: str) -> str:
+    """Join a false paragraph break after a word that requires continuation."""
+    lines = markdown.splitlines()
+    out = []
+    in_fence = False
+    i = 0
+    continuation = re.compile(
+        r"\b(?:and|or|the|a|an|of|to|in|on|with|for|from|like|as)\s*$", re.I)
+    structural = re.compile(r"^(?:#|>|\s*[-+*]\s|\s*\d+[.)]\s|\|)")
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        if (not in_fence and i + 2 < len(lines) and not lines[i + 1].strip()
+                and lines[i + 2].strip() and continuation.search(line)
+                and not structural.match(line) and not structural.match(lines[i + 2])):
+            out.append(line.rstrip() + " " + lines[i + 2].lstrip())
+            i += 3
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out).strip() + "\n"
 
 
 def build_head(prof: Profile, lines: list[Line], toc: list, all_meta: list) -> str:
@@ -5152,8 +5235,21 @@ def build_head(prof: Profile, lines: list[Line], toc: list, all_meta: list) -> s
             continue
         if re.search(r"\bedition\b|\bpress\b|university", m, re.I):
             continue
+        # Small tracked-cap labels above a cover title are series/date
+        # furniture, not subtitles ("SI T R A S T U DIES 25 3 JAN UARY ...").
+        # Use the source typography as corroboration so initials and genuinely
+        # stylised subtitles are not removed merely for containing spaces.
+        matching_sizes = [l.size for l in lines if l.kind == "title_meta"
+                          and R.smart_case(l.text.strip(), prof.acronyms) == m]
+        glyphs = len(re.findall(r"(?<!\w)[A-Za-z0-9](?!\w)", m))
+        if glyphs >= 4 and matching_sizes and max(matching_sizes) < prof.body_size * 1.2:
+            continue
         sub_parts.append(m)
     subtitle = " ".join(sub_parts).strip() or None
+    if subtitle:
+        subtitle_glyphs = len(re.findall(r"(?<!\w)[A-Za-z0-9](?!\w)", subtitle))
+        if len(subtitle) > 300 or len(subtitle.split()) > 40 or subtitle_glyphs >= 6:
+            subtitle = None
     if subtitle and re.sub(r"[^a-z]", "", subtitle.lower()) in \
             re.sub(r"[^a-z]", "", prof.canonical_title.lower()):
         subtitle = None                                   # just the title repeated
@@ -5987,6 +6083,7 @@ def main():
     if args.figure_dir:
         add_vector_figures(doc, lines, prof, pages)
         add_image_figures(doc, lines, prof, pages)
+        absorb_nearby_figure_labels(lines, prof)
     recover_captioned_layout(doc, lines, prof, pages)
     mark_duplicate_margin_terms(lines, prof)
 
