@@ -249,6 +249,13 @@ class CoreRegressions(unittest.TestCase):
         self.assertIn("documented high-level result", got)
         self.assertIn("code-\n\nword", got)
 
+    def test_required_continuation_word_repairs_false_paragraph_break(self):
+        md = (r"\> Bored Now users seek connection through Facebook, Instagram and"
+              "\n\nTwitter, or in their email.\n")
+        got = self.m.repair_markdown_false_breaks(md)
+        self.assertIn("Instagram and Twitter", got)
+        self.assertNotIn("and\n\nTwitter", got)
+
     def test_numeric_only_footnote_does_not_emit_empty_definition(self):
         line = self.m.Line(0, "2", 0, 0, 20, 10, 8, ("Times",),
                            False, False, False, 0, kind="footnote", fn_num="2")

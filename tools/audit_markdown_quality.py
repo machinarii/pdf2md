@@ -23,6 +23,10 @@ CHECKS = {
     "trailing_whitespace": (1, "Trailing whitespace remains"),
     "short_prose_fragment": (1, "Many short non-structural lines may be unreflowed"),
     "malformed_table": (2, "A pipe-table row has inconsistent cell counts"),
+    "corrupt_title_spacing": (4, "Title contains likely letter-by-letter extraction"),
+    "implausible_title_length": (4, "Title appears to have swallowed body text"),
+    "corrupt_subtitle_spacing": (3, "Subtitle contains likely letter-by-letter extraction"),
+    "implausible_subtitle_length": (3, "Subtitle appears to have swallowed unrelated text"),
 }
 
 
@@ -36,6 +40,19 @@ def inspect(path: Path) -> tuple[Counter, dict]:
         issues[kind] += 1
         if len(examples[kind]) < 3:
             examples[kind].append({"line": line, "text": sample[:180]})
+
+    for field, corrupt_kind, length_kind, limit in (
+            ("title", "corrupt_title_spacing", "implausible_title_length", 240),
+            ("subtitle", "corrupt_subtitle_spacing", "implausible_subtitle_length", 300)):
+        match = re.search(rf"^{field}:\s*(.+)$", text, re.M)
+        if not match:
+            continue
+        value = match.group(1).strip().strip("\"'")
+        singles = re.findall(r"(?<!\w)[A-Za-z0-9](?!\w)", value)
+        if len(singles) >= 4:
+            add(corrupt_kind, text[:match.start()].count("\n") + 1, value)
+        if len(value) > limit or len(value.split()) > 40:
+            add(length_kind, text[:match.start()].count("\n") + 1, value)
 
     in_fence = False
     for i, line in enumerate(lines, 1):

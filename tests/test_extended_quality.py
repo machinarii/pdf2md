@@ -46,6 +46,76 @@ class ExtendedQuality(unittest.TestCase):
         self.assertEqual(echo.kind, 'consumed')
         self.assertEqual(unique.kind, 'body')
 
+    def test_small_axis_label_just_outside_figure_is_absorbed(self):
+        label = self.line('t', (236, 307, 239, 314)); label.size = 7
+        member = self.line('R', (364, 313, 377, 325)); member.size = 7
+        prose = self.line('A legitimate short sentence.', (60, 285, 210, 297)); prose.size = 12
+        region = dict(page=0, x0=126, y0=312.8, x1=400, y1=480,
+                      lines=[member], caption=None, vector=True)
+        member.kind, member.region = 'figure_text', region
+        prof = self.m.Profile(body_size=10, line_pitch=12, figure_regions=[region])
+        self.assertEqual(self.m.absorb_nearby_figure_labels([prose, label, member], prof), 1)
+        self.assertEqual(label.kind, 'figure_text')
+        self.assertEqual(prose.kind, 'body')
+        self.assertLess(region['y0'], 308)
+
+    def test_ocr_text_inside_raster_figure_is_not_emitted_as_prose(self):
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=600, height=700)
+            page.insert_image(pymupdf.Rect(50, 150, 550, 480), stream=self.image_bytes())
+            ui = self.line('search shop women shop men', (100, 250, 260, 265))
+            ui.size = 6
+            ui.sources = [{'method': 'tesseract'}]
+            caption = self.line('Users can pull images into the screen.', (50, 500, 300, 515))
+            prof = self.m.Profile(body_size=12, line_pitch=16, page_w=600, page_h=700)
+            self.m.add_image_figures(doc, [ui, caption], prof, [0])
+            self.assertEqual(ui.kind, 'figure_text')
+            self.assertEqual(caption.kind, 'body')
+            md = self.m.assemble([ui, caption], prof, doc=doc)
+            self.assertNotIn('search shop women', md)
+            self.assertIn('Users can pull images', md)
+
+    def test_corrupt_tracked_cover_title_prefers_pdf_metadata(self):
+        title = self.line('M E G A - Trends 2 0 2 6', (20, 120, 580, 250))
+        title.size = 60
+        title.kind = 'title_line'
+        prof = self.m.Profile(body_size=10, metadata_title='Megatrends 2026')
+        prof.doc_type = 'book'
+        with patch.object(self.m.R, 'assign_regimes'):
+            self.m.classify([title], prof)
+        self.assertEqual(prof.canonical_title, 'Megatrends 2026')
+
+    def test_small_tracked_series_label_is_not_a_subtitle(self):
+        series = self.line('Si T R a S T U Dies 25 3 Jan Uary 2 0 2 6')
+        series.size = 9
+        series.kind = 'title_meta'
+        subtitle = self.line('Towards a new social contract')
+        subtitle.size = 18
+        subtitle.kind = 'title_meta'
+        prof = self.m.Profile(body_size=10, canonical_title='Megatrends 2026',
+                              source_name='report.pdf', page_count=97)
+        head = self.m.build_head(prof, [series, subtitle], [],
+                                 [series.text, subtitle.text])
+        self.assertIn('subtitle: Towards a new social contract', head)
+        self.assertNotIn('Si T R a', head)
+
+    def test_noisy_inferred_title_falls_back_to_source_filename(self):
+        title = self.line('A paragraph accidentally swallowed as the title. ' * 12)
+        title.size = 30
+        title.kind = 'title_line'
+        prof = self.m.Profile(body_size=10, source_name='Useful_Report_Name.pdf')
+        prof.doc_type = 'book'
+        with patch.object(self.m.R, 'assign_regimes'):
+            self.m.classify([title], prof)
+        self.assertEqual(prof.canonical_title, 'Useful Report Name')
+
+    def test_extraction_noise_is_not_published_as_subtitle(self):
+        prof = self.m.Profile(body_size=10, canonical_title='Python Crash Course',
+                              source_name='book.pdf', page_count=1)
+        noisy = '2 N D E D I T I O N A H a N D S O N P R O J E C T S'
+        head = self.m.build_head(prof, [], [], [noisy])
+        self.assertNotIn('subtitle:', head)
+
     def test_top_captioned_chart_keeps_two_column_prose_before_image(self):
         with pymupdf.open() as doc:
             page = doc.new_page(width=600, height=800)
