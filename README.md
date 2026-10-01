@@ -75,6 +75,15 @@ Use `--max-file-size SIZE` to refuse oversized input before parsing; decimal
 (`MB`, `GB`) and binary (`MiB`, `GiB`) units are supported, as are raw bytes.
 Run `python3 pdf2md_all.py --help` for all options.
 
+## Agent skills
+
+Use pdf2md from **Claude Code, Codex, OpenClaw, or Hermes** with the shared
+[pdf2md skill](plugins/pdf2md/skills/pdf2md/SKILL.md). It covers CLI setup,
+conversion, selective OCR, figure handling, and checking output against the source.
+Claude and Codex plugin manifests are included in this repository.
+
+See [agent installation and marketplace publishing](docs/agent-skills.md).
+
 ## Framework
 
 This section explains the layers,

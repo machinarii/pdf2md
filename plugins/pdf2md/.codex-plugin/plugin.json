@@ -1,0 +1,32 @@
+{
+  "name": "pdf2md",
+  "version": "0.1.0",
+  "description": "Convert PDF, EPUB, and office documents to readable Markdown with optional OCR and source-linked inspection.",
+  "author": {
+    "name": "Jinsoo An",
+    "url": "https://github.com/machinarii"
+  },
+  "homepage": "https://github.com/machinarii/pdf2md",
+  "repository": "https://github.com/machinarii/pdf2md",
+  "license": "MIT",
+  "keywords": [
+    "pdf",
+    "markdown",
+    "document-conversion",
+    "ocr",
+    "rag"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "pdf2md",
+    "shortDescription": "Convert documents to readable Markdown",
+    "longDescription": "Local PDF, EPUB, and office document conversion with paragraph reflow, heading recovery, selective OCR, and source inspection. Includes CLI installation guidance; no API key required.",
+    "developerName": "Jinsoo An",
+    "category": "Productivity",
+    "capabilities": [],
+    "websiteURL": "https://github.com/machinarii/pdf2md",
+    "defaultPrompt": [
+      "Convert my document to Markdown and check the result."
+    ]
+  }
+}

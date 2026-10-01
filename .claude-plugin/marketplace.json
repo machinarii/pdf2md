@@ -1,0 +1,12 @@
+{
+  "name": "pdf2md",
+  "owner": {"name": "Jinsoo An"},
+  "metadata": {"description": "Document-to-Markdown skills from machinarii/pdf2md"},
+  "plugins": [
+    {
+      "name": "pdf2md",
+      "source": "./plugins/pdf2md",
+      "description": "Convert documents to readable Markdown with optional OCR and source inspection."
+    }
+  ]
+}
