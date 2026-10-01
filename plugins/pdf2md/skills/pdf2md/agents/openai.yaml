@@ -1,0 +1,4 @@
+interface:
+  display_name: "pdf2md"
+  short_description: "Convert documents to readable, source-linked Markdown"
+  default_prompt: "Use $pdf2md to convert my document to Markdown and inspect the result against the source."

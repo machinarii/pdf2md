@@ -1,0 +1,12 @@
+{
+  "name": "pdf2md",
+  "interface": {"displayName": "pdf2md"},
+  "plugins": [
+    {
+      "name": "pdf2md",
+      "source": {"source": "local", "path": "./plugins/pdf2md"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Productivity"
+    }
+  ]
+}

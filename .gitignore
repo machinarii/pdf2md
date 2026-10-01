@@ -25,3 +25,4 @@ figures/
 .idea/
 *.swp
 .DS_Store
+dist/

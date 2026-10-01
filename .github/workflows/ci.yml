@@ -37,6 +37,9 @@ jobs:
       - name: Check the single-file build matches the module
         run: python tools/sync_structured.py --check
 
+      - name: Build agent skill release archives
+        run: python tools/package_skill.py
+
       - name: Tests
         run: python -m unittest discover -s tests -v
 
