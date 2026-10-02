@@ -104,6 +104,7 @@ npx --yes clawhub@0.23.3 skill publish plugins/pdf2md/skills/pdf2md \
   --slug machinarii-pdf2md --name "pdf2md" --version 0.1.0 \
   --changelog "Initial portable document-to-Markdown skill" \
   --source-repo https://github.com/machinarii/pdf2md \
+  --source-commit 7dbf10022dd3d0d57b4075da63985cb5954a4873 \
   --source-path plugins/pdf2md/skills/pdf2md
 ```
 
