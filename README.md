@@ -432,6 +432,7 @@ Inspect important outputs against their source. See [architecture and limitation
 ## Documentation and contributing
 
 - [Usage and CLI reference](docs/usage.md)
+- [Table preservation, coverage audits, and optional RAG chunks](docs/usage.md#table-preservation-and-page-coverage)
 - [Full output gallery](docs/output-gallery.md) and [reproduction scripts](examples/comparison/README.md)
 - [GraphRAG guide](docs/graphrag.md)
 - [Architecture](docs/architecture.md), [benchmarks](benchmarks/README.md), and [changelog](CHANGELOG.md)

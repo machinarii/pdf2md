@@ -4059,9 +4059,9 @@ def mark_panel_labels(lines: list[Line]) -> None:
 def render_table(t: dict) -> list[str]:
     n = t["cols"]
     def row(cells):
-        return "| " + " | ".join(cells.get(k, "").replace("|", "\\|") for k in range(n)) + " |"
-    out = [row(t["grid"][0]), "|" + "---|" * n]
-    out += [row(c) for c in t["grid"][1:]]
+        return "| " + " | ".join(re.sub(r"\s+", " ", cells.get(k, "")).replace("|", "\\|") for k in range(n)) + " |"
+    out = [row(t.get("headers", t["grid"][0])), "|" + "---|" * n]
+    out += [row(c) for c in t["grid"][t.get("header_rows", 1):]]
     return out
 
 
@@ -4677,6 +4677,360 @@ def selective_ocr(doc, lines, pages, language="eng", backend=None):
     return audit
 
 
+# Document-level preservation: evidence is retained independently of rendering.
+def capture_page_evidence(doc, pages, lines):
+    """Snapshot native input before classification or OCR can mutate it."""
+    by_page = defaultdict(list)
+    for line in lines:
+        by_page[line.page].append(line)
+    result = []
+    for pno in pages:
+        page = doc[pno]
+        sources = {s['id']: dict(s) for line in by_page[pno] for s in line.sources}
+        result.append({'page': pno + 1, 'native_characters': sum(len(l.text) for l in by_page[pno]),
+                       'image_regions': [list(i['bbox']) for i in page.get_image_info()],
+                       'has_vector_content': bool(page.get_drawings()),
+                       'sources': list(sources.values())})
+    return result
+
+
+def coverage_report(evidence, lines, repairs):
+    records = []
+    for original in evidence:
+        pno = original['page']
+        current = [l for l in lines if l.page + 1 == pno]
+        dispositions = defaultdict(set)
+        for line in current:
+            for source in line.sources:
+                dispositions[source['id']].add(line.kind)
+        ledger = []
+        for source in original['sources']:
+            roles = sorted(dispositions.get(source['id'], []))
+            status = ('unaccounted' if not roles else
+                      'suppressed' if all(r in ('furniture', 'consumed') for r in roles) else 'retained')
+            ledger.append(dict(source, status=status, roles=roles))
+        repair_records = [r for r in repairs if r.get('page') == pno]
+        reasons = []
+        active = [l for l in current if l.kind not in ('furniture', 'consumed')]
+        if not active and original['image_regions']:
+            reasons.append('image_page_without_recovered_content')
+        if not active and original['has_vector_content'] and not original['native_characters']:
+            reasons.append('vector_page_without_recovered_text')
+        if any(s['status'] == 'unaccounted' for s in ledger):
+            reasons.append('source_lines_unaccounted')
+        if original['native_characters'] and not active:
+            reasons.append('all_native_content_suppressed')
+        if any(r.get('status') != 'accepted' for r in repair_records):
+            reasons.append('ocr_not_accepted')
+        if any(damaged_characters(l.text) for l in current):
+            reasons.append('unresolved_glyphs')
+        records.append({**{k: v for k, v in original.items() if k != 'sources'},
+                        'blank_candidate': not original['native_characters'] and
+                        not original['image_regions'] and not original['has_vector_content'],
+                        'classified_lines': len(current), 'active_lines': len(active),
+                        'source_dispositions': ledger, 'ocr': repair_records,
+                        'review_reasons': reasons})
+    return {'schema_version': 1, 'scope': 'source-line accounting, not factual accuracy or byte-level output coverage',
+            'pages': records}
+
+
+def prepare_table_evidence(doc, lines, prof, directory=None):
+    """Preserve native geometry where available without guessing missing spans."""
+    native_pages = {}
+    for index, table in enumerate(prof.tables):
+        members = [l for l in lines if l.table is table]
+        if not members:
+            continue
+        box = pymupdf.Rect(min(l.x0 for l in members), min(l.y0 for l in members),
+                           max(l.x1 for l in members), max(l.y1 for l in members))
+        page = doc[table['page']]
+        nearby = [l for l in lines if l.page == table['page'] and
+                  l.x1 >= box.x0 and l.x0 <= box.x1 and
+                  (0 <= box.y0-l.y1 <= 55 or 0 <= l.y0-box.y1 <= 45) and
+                  (l.kind == 'caption' or re.match(r'^(?:Table\b|Source:|Notes?:|Units?:)', l.text, re.I))]
+        table.update(id=f'table-{index+1}', pages=[table['page']+1],
+                     bbox=list(box), context=[l.text for l in nearby],
+                     sources=[s for l in members for s in l.sources],
+                     method='geometry', review_reasons=['header_row_inferred'],
+                     row_pages=[table['page']+1] * len(table['grid']))
+        table['cells'] = [{'row': r, 'column': c, 'text': row.get(c, ''),
+                           'rowspan': None, 'colspan': None, 'bbox': None, 'page': table['page']+1}
+                          for r, row in enumerate(table['grid']) for c in range(table['cols'])]
+        # Match existing detection, rather than indiscriminately promoting every grid on a page.
+        try:
+            if table['page'] not in native_pages:
+                native_pages[table['page']] = page.find_tables().tables
+            candidates = native_pages[table['page']]
+            native = next((t for t in candidates if t.col_count == table['cols'] and
+                           t.row_count == len(table['grid']) and
+                           (pymupdf.Rect(t.bbox) + (-2, -2, 2, 2)).contains(box)), None)
+            if native is not None:
+                extracted = native.extract()
+                normalize = lambda s: re.sub(r'\s+', '', s or '')
+                if all(normalize(extracted[r][c]) == normalize(table['grid'][r].get(c, ''))
+                       for r in range(len(extracted)) for c in range(table['cols'])):
+                    table['method'] = 'native-grid'
+                    box = pymupdf.Rect(native.bbox)
+                    table['bbox'] = list(box)
+                    for cell in table['cells']:
+                        bounds = native.rows[cell['row']].cells[cell['column']]
+                        cell['bbox'] = list(bounds) if bounds else None
+                    bounds = [c['bbox'] for c in table['cells'] if c['bbox']]
+                    xs = sorted({round(v, 2) for b in bounds for v in (b[0], b[2])})
+                    ys = sorted({round(v, 2) for b in bounds for v in (b[1], b[3])})
+                    if len(xs) == table['cols']+1 and len(ys) == len(table['grid'])+1:
+                        for cell in table['cells']:
+                            if cell['bbox']:
+                                b = cell['bbox']
+                                cell['colspan'] = sum(b[0]-.1 <= x < b[2]-.1 for x in xs)
+                                cell['rowspan'] = sum(b[1]-.1 <= y < b[3]-.1 for y in ys)
+                        expanded = [dict(row) for row in table['grid']]
+                        for cell in table['cells']:
+                            if not cell['bbox']:
+                                continue
+                            for r in range(cell['row'], min(len(expanded), cell['row']+cell['rowspan'])):
+                                for c in range(cell['column'], min(table['cols'], cell['column']+cell['colspan'])):
+                                    if not expanded[r].get(c):
+                                        expanded[r][c] = cell['text']
+                        table['grid'] = expanded
+                        grouped = any(c['row'] == 0 and (c['colspan'] or 0) > 1 for c in table['cells'])
+                        second = list(expanded[1].values()) if len(expanded) > 1 else []
+                        if grouped and second and all(re.search(r'[A-Za-z]|^(?:19|20)\d{2}$', v) for v in second):
+                            table['header_rows'] = 2
+                            table['headers'] = {c: ' — '.join(dict.fromkeys(
+                                expanded[r].get(c, '') for r in range(2) if expanded[r].get(c)))
+                                for c in range(table['cols'])}
+                    if any(c['bbox'] is None for c in table['cells']):
+                        table['review_reasons'].append('merged_or_missing_cells')
+        except (ValueError, RuntimeError):
+            table['review_reasons'].append('native_geometry_unavailable')
+        for cell in table['cells']:
+            cell['header_path'] = table.get('headers', table['grid'][0]).get(cell['column'], '')
+        if directory:
+            directory = Path(directory)
+            directory.mkdir(parents=True, exist_ok=True)
+            crop = box
+            for line in nearby:
+                crop |= pymupdf.Rect(line.x0, line.y0, line.x1, line.y1)
+            path = directory / (table['id'] + '.png')
+            page.get_pixmap(matrix=pymupdf.Matrix(2, 2), clip=(crop + (-8, -8, 8, 8)) & page.rect).save(path)
+            table['image'] = path.name
+            (directory / (table['id'] + '.html')).write_text(table_html(table), encoding='utf-8')
+    return [t for t in prof.tables if t.get('id')]
+
+
+def table_html(table):
+    """Preserve known spans for consumers that support HTML tables."""
+    from html import escape
+    cells = {(c['row'], c['column']): c for c in table['cells']}
+    covered = set()
+    output = ['<table>']
+    for r, row in enumerate(table['grid']):
+        output.append('<tr>')
+        for c in range(table['cols']):
+            if (r, c) in covered:
+                continue
+            cell = cells.get((r, c), {})
+            rs, cs = cell.get('rowspan') or 1, cell.get('colspan') or 1
+            covered.update((rr, cc) for rr in range(r, r+rs) for cc in range(c, c+cs))
+            tag = 'th' if r < table.get('header_rows', 1) else 'td'
+            output.append(f'<{tag} rowspan="{rs}" colspan="{cs}">' +
+                          escape(cell.get('text', row.get(c, ''))) + f'</{tag}>')
+        output.append('</tr>')
+    output.append('</table>')
+    return '\n'.join(output)
+
+
+def join_continued_tables(tables, lines):
+    """Require an explicit numbered continuation, matching headers and geometry."""
+    ordered = sorted(tables, key=lambda t: (t['page'], t['bbox'][1]))
+    for previous, current in zip(ordered, ordered[1:]):
+        root = previous.get('_root', previous)
+        if current.get('method') == 'model' or root.get('method') == 'model':
+            continue
+        if current['page'] != previous['page'] + 1 or current['cols'] != root['cols']:
+            continue
+        caption = ' '.join(current['context'])
+        match = re.search(r'\bTable\s+(\d+)\b.*\bcontinued\b', caption, re.I)
+        if not match or not re.search(r'\bTable\s+' + re.escape(match[1]) + r'\b',
+                                     ' '.join(root['context']), re.I):
+            continue
+        if any(abs(current['bbox'][k] - previous['bbox'][k]) > 8 for k in (0, 2)):
+            continue
+        depth = root.get('header_rows', 1)
+        if current.get('header_rows', 1) != depth or current['grid'][:depth] != root['grid'][:depth]:
+            continue
+        offset = len(root['grid']) - depth
+        root['grid'].extend(current['grid'][depth:])
+        root['cells'].extend({**c, 'row': c['row'] + offset} for c in current['cells'] if c['row'] >= depth)
+        root['pages'].extend(current['pages'])
+        root['row_pages'].extend(current['row_pages'][depth:])
+        root['sources'].extend(current['sources'])
+        root.setdefault('continuations', []).append({'table_id': current['id'],
+            'page': current['page'] + 1, 'image': current.get('image'),
+            'evidence': 'numbered continuation, identical headers and aligned bounds'})
+        current['joined_into'] = root['id']
+        current['_root'] = root
+        for line in lines:
+            if line.table is current:
+                line.table = root
+
+
+def table_payload(tables):
+    keys = ('id', 'pages', 'bbox', 'cols', 'grid', 'cells', 'context', 'sources', 'method',
+            'review_reasons', 'row_pages', 'image', 'continuations', 'joined_into', 'model_candidate',
+            'headers', 'header_rows', 'native_grid', 'native_cells')
+    return [{k: t[k] for k in keys if k in t} for t in tables]
+
+
+def decode_table_json(raw):
+    """Accept a complete final JSON object, excluding any preceding model prose."""
+    raw = raw.strip()
+    if raw.endswith('```'):
+        raw = raw[:-3].rstrip()
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r'\{', raw):
+        try:
+            value, end = decoder.raw_decode(raw, match.start())
+        except ValueError:
+            continue
+        if not raw[end:].strip() and isinstance(value, dict) and 'headers' in value and 'rows' in value:
+            return value
+    raise ValueError('model returned no complete final table JSON object')
+
+
+def table_model_candidate(table, directory, model, host):
+    """Keep model alternatives for review; never silently replace native cells."""
+    import base64
+    import hashlib
+    import urllib.request
+    prompt = ('Extract this table, including its caption and notes. Return JSON only with '
+              'headers (list of strings), rows (list of lists of strings or null for unreadable), '
+              'notes (list of strings including caption). Use an empty string for a visibly blank cell; '
+              'reserve null for unreadable text. Expand grouped headers into explicit header paths with units. '
+              'Do not infer missing numbers, calculate values, or summarize trends.')
+    image = (Path(directory) / table['image']).read_bytes()
+    # Tags can be replaced in place. Reuse results only with a resolved model digest.
+    revision = None
+    try:
+        with urllib.request.urlopen(host.rstrip('/') + '/api/tags', timeout=10) as response:
+            installed = json.load(response).get('models', [])
+        revision = next((m.get('digest') for m in installed
+                         if m.get('name') in (model, model + ':latest')), None)
+    except Exception:
+        pass
+    key = hashlib.sha256(image + json.dumps([host, model, revision, prompt, 4096, table["grid"]]).encode()).hexdigest()
+    cache = Path(directory) / ('candidate-' + key + '.json')
+    if revision and cache.exists():
+        try:
+            return json.loads(cache.read_text())
+        except (ValueError, OSError):
+            pass
+    started = time.perf_counter()
+    result = {'model': model, 'model_digest': revision, 'review_required': True, 'cache_key': key,
+              'status': 'failed', 'native_preserved': True}
+    try:
+        request = urllib.request.Request(host.rstrip('/') + '/api/generate',
+            data=json.dumps({'model': model, 'prompt': prompt, 'images': [base64.b64encode(image).decode()],
+                             'format': 'json', 'stream': False, 'think': False,
+                             'options': {'temperature': 0, 'num_predict': 4096}}).encode(),
+            headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=180) as response:
+            response = json.load(response)
+        if response.get('done_reason') == 'length':
+            raise ValueError('truncated model response')
+        raw = response.get('response', '').strip()
+        if raw.startswith('```') and raw.endswith('```'):
+            raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
+        if not raw:
+            raise ValueError('model returned no final JSON content')
+        candidate = decode_table_json(raw)
+        headers, rows = candidate['headers'], candidate['rows']
+        if not isinstance(candidate.get('notes', []), list) or not all(isinstance(n, str) for n in candidate.get('notes', [])):
+            raise ValueError('invalid notes')
+        if not isinstance(headers, list) or not headers or not all(isinstance(h, str) for h in headers):
+            raise ValueError('invalid headers')
+        if not isinstance(rows, list) or not rows or not all(isinstance(row, list) and
+                len(row) == len(headers) and all(c is None or isinstance(c, str) for c in row) for row in rows):
+            raise ValueError('invalid rows')
+        native_numbers = Counter(re.findall(r'[-+]?\d[\d,.]*(?:%|\b)',
+                            ' '.join(str(v) for row in table['grid'] for v in row.values())))
+        model_numbers = Counter(re.findall(r'[-+]?\d[\d,.]*(?:%|\b)',
+                            ' '.join(headers + [v for row in rows for v in row if v is not None])))
+        result.update(status='candidate', content=candidate,
+                      numeric_tokens_match=native_numbers == model_numbers,
+                      shape_matches_native=len(headers) == table['cols'] and len(rows) == len(table['grid'])-1,
+                      eval_count=response.get('eval_count'))
+    except Exception as error:
+        result['error'] = str(error)
+    result['elapsed_seconds'] = time.perf_counter() - started
+    if result['status'] == 'candidate' and revision:
+        cache.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    return result
+
+
+def markdown_chunks(md, max_tokens, encode, tables=()):
+    """Keep blocks intact; repeat table headers when splitting row groups."""
+    chunks, headings = [], []
+    md = re.sub(r'\A---\n.*?\n---(?:\n|$)', '', md, count=1, flags=re.S)
+    blocks = re.split(r'\n\s*\n', md.strip())
+    # Avoid splitting fenced code or YAML metadata at blank lines.
+    merged, buffer, fence = [], [], None
+    for block in blocks:
+        buffer.append(block)
+        for line in block.splitlines():
+            mark = re.match(r'^\s*(`{3,}|~{3,})', line)
+            if mark:
+                token = mark[1]
+                if fence is None:
+                    fence = token
+                elif token[0] == fence[0] and len(token) >= len(fence):
+                    fence = None
+        if fence is None:
+            merged.append('\n\n'.join(buffer)); buffer = []
+    if buffer:
+        merged.append('\n\n'.join(buffer))
+    current_table = None
+    def emit(text):
+        count = len(encode(text))
+        chunks.append({'id': f'chunk-{len(chunks)+1}', 'text': text, 'section_path': list(headings),
+                       'tokens': count, 'oversize': count > max_tokens,
+                       'table_id': current_table.get('id') if current_table else None,
+                       'extraction_method': current_table.get('method') if current_table else None,
+                       'image_links': ([current_table['image_link']] if current_table and current_table.get('image_link') else []) +
+                           ([c['image_link'] for c in current_table.get('continuations', []) if c.get('image_link')] if current_table else []),
+                       'pages': current_table.get('pages', []) if current_table else [],
+                       'source_ids': [s['id'] for s in current_table.get('sources', [])] if current_table else []})
+    for block in merged:
+        current_table = next((t for t in tables if not t.get('joined_into') and
+                              '\n'.join(render_table(t)) == block), None)
+        if not chunks and block.startswith('---\n'):
+            continue
+        heading = re.fullmatch(r'(#{1,6})\s+([^\n]+)', block)
+        if heading:
+            level = len(heading[1]); headings[:] = headings[:level-1] + [heading[2]]
+        prefix = ' > '.join(headings)
+        context = (prefix + '\n\n') if prefix and not heading else ''
+        if current_table:
+            if current_table.get('method') == 'model':
+                context += 'AI-extracted table; source review required.\n\n'
+            context += '\n'.join(current_table.get('context', [])) + '\n\n'
+        rows = block.splitlines()
+        if len(rows) >= 3 and rows[0].startswith('|') and re.fullmatch(r'[| :\-]+', rows[1]):
+            header = '\n'.join(rows[:2])
+            group = []
+            for row in rows[2:]:
+                candidate = context + header + '\n' + '\n'.join(group + [row])
+                if group and len(encode(candidate)) > max_tokens:
+                    emit(context + header + '\n' + '\n'.join(group)); group = []
+                group.append(row)
+            if group:
+                emit(context + header + '\n' + '\n'.join(group))
+        else:
+            emit(context + block)
+    return chunks
+
+
 def write_quality_artifacts(directory, src, md, prof, pages, elapsed):
     """Keep source content separate from cleaned output and transformation logs."""
     import hashlib
@@ -4868,7 +5222,17 @@ def assemble(lines: list[Line], prof: Profile, *, make_toc=True,
             if t is not None and id(t) not in emitted_tables:
                 emitted_tables.add(id(t))
                 flush_para(); flush_code()
+                if t.get("method") == "model":
+                    out.extend(["> AI-extracted table; verify against the source image.", ""])
                 out.extend(render_table(t)); out.append("")
+                if t.get("method") == "model":
+                    out.extend(t.get("model_candidate", {}).get("content", {}).get("notes", []))
+                    out.append("")
+                if t.get("image_link"):
+                    out.extend([f"[Table source image]({t['image_link']})", ""])
+                    for continuation in t.get("continuations", []):
+                        if continuation.get("image_link"):
+                            out.extend([f"[Continued table source, page {continuation['page']}]({continuation['image_link']})", ""])
             prev = ln
             continue
 
@@ -5983,6 +6347,13 @@ def main():
     ap.add_argument("--artifacts", metavar="DIR",
                     help="write inspectable intermediates: profile.json, stats.json, "
                          "blocks.jsonl (every typed line), and pages/NNN.txt")
+    ap.add_argument("--table-vlm", metavar="MODEL", help="save reviewable Ollama table alternatives; requires --artifacts")
+    ap.add_argument("--table-max-calls", type=int, default=8, help="maximum table model attempts per document (default 8)")
+    ap.add_argument("--table-render", choices=["native", "model"], default="native",
+                    help="explicitly use validated model table candidates in Markdown (still require review)")
+    ap.add_argument("--chunks", metavar="JSON", help="optional PDF Markdown chunk export; requires tiktoken")
+    ap.add_argument("--chunk-tokens", type=int, default=800)
+    ap.add_argument("--chunk-tokenizer", default="cl100k_base")
     ap.add_argument("--title", help="override detected title")
     ap.add_argument("--author", action="append", default=[],
                     help="override detected author(s); repeatable")
@@ -5999,6 +6370,22 @@ def main():
 
     if args.no_visual_ai:
         args.figure_vlm = None
+        args.table_vlm = None
+    if args.table_render == "model" and not args.table_vlm:
+        ap.error("--table-render model requires --table-vlm and is incompatible with --no-visual-ai")
+    if args.table_vlm and not args.artifacts:
+        ap.error("--table-vlm requires --artifacts for source crops and review records")
+    if args.table_max_calls < 0:
+        ap.error("--table-max-calls must be nonnegative")
+    if args.chunk_tokens < 1:
+        ap.error("--chunk-tokens must be positive")
+    tokenizer = None
+    if args.chunks:
+        try:
+            import tiktoken
+            tokenizer = tiktoken.get_encoding(args.chunk_tokenizer)
+        except (ImportError, ValueError) as error:
+            ap.error(f"chunk tokenizer unavailable: {error}")
     if args.figure_vlm and not args.figure_dir:
         ap.error("--figure-vlm needs --figure-dir: the model transcribes the "
                  "cropped figure images, so there must be somewhere to crop them to")
@@ -6017,11 +6404,18 @@ def main():
                 f"refusing to convert {src.name}: file is {format_file_size(input_size)}, "
                 f"above --max-file-size {format_file_size(args.max_file_size)}"
             )
+    output_path = Path(args.output) if args.output else src.with_suffix(".md")
+    if output_path.resolve() == src.resolve():
+        ap.error("refusing to overwrite the input file")
+    if args.chunks and Path(args.chunks).resolve() in (src.resolve(), output_path.resolve()):
+        ap.error("--chunks must differ from input and Markdown output")
     if args.ocr != "off" and not args.artifacts:
         ap.error("--ocr auto requires --artifacts DIR to retain the repair audit")
     if args.ocr != "off" and not shutil.which("tesseract"):
         ap.error("--ocr auto requires the tesseract executable and language data")
     if src.suffix.lower() in ST.STRUCTURED_EXT:
+        if args.table_vlm or args.chunks:
+            ap.error("--table-vlm and --chunks currently support PDF input only")
         if args.ocr != "off":
             ap.error("--ocr is only supported for PDF input")
         return main_structured(args, src)
@@ -6043,6 +6437,7 @@ def main():
             raise SystemExit(3)
 
     lines = extract_lines(doc, pages, preserve_private=args.ocr == "auto")
+    evidence = capture_page_evidence(doc, pages, lines) if args.artifacts else []
     repairs = selective_ocr(doc, lines, pages, args.ocr_language) if args.ocr == "auto" else []
     sanitized = sanitize_unrepaired_characters(lines) if args.ocr == "auto" else 0
     if sanitized:
@@ -6056,6 +6451,9 @@ def main():
         print(f"OCR: sanitized unresolved glyph placeholders on {sanitized} lines",
               file=sys.stderr)
     if not lines:
+        if args.artifacts:
+            directory = Path(args.artifacts); directory.mkdir(parents=True, exist_ok=True)
+            (directory / "coverage.json").write_text(json.dumps(coverage_report(evidence, lines, repairs), indent=2), encoding="utf-8")
         scope = (f"any of {doc.page_count} pages" if len(pages) == doc.page_count
                  else f"the {len(pages)} selected of {doc.page_count} pages")
         doc.close()
@@ -6118,8 +6516,44 @@ def main():
         Path(args.emit_json).write_text(json.dumps(payload, indent=1))
         print(f"json  -> {args.emit_json}  ({len(payload)} blocks)")
 
+    table_dir = Path(args.artifacts) / "tables" if args.artifacts else None
+    tables = prepare_table_evidence(doc, lines, prof, table_dir)
+    if args.table_vlm:
+        for index, table in enumerate(tables):
+            if index >= args.table_max_calls:
+                table["model_candidate"] = {"status": "budget_exhausted", "review_required": True, "native_preserved": True}
+                continue
+            table["model_candidate"] = table_model_candidate(table, table_dir, args.table_vlm, args.ollama_host)
+            candidate = table["model_candidate"]
+            if args.table_render == "model" and candidate["status"] == "candidate":
+                table["native_grid"] = [dict(row) for row in table["grid"]]
+                content = candidate["content"]
+                table["grid"] = [dict(enumerate(content["headers"]))] + [
+                    {i: value if value is not None else "[unreadable]" for i, value in enumerate(row)}
+                    for row in content["rows"]]
+                table["cols"] = len(content["headers"])
+                table["native_cells"] = table["cells"]
+                table["cells"] = [{"row": r, "column": c, "text": value,
+                    "rowspan": None, "colspan": None, "bbox": None,
+                    "page": table["page"]+1, "header_path": content["headers"][c]}
+                    for r, row in enumerate(table["grid"]) for c, value in row.items()]
+                table["row_pages"] = [table["page"]+1] * len(table["grid"])
+                table["header_rows"] = 1
+                table.pop("headers", None)
+                table["method"] = "model"
+                table["review_reasons"].append("model_output_requires_review")
+                table["context"].extend(content.get("notes", []))
+    join_continued_tables(tables, lines)
     fig_dir = Path(args.figure_dir) if args.figure_dir else None
     out = Path(args.output) if args.output else src.with_suffix(".md")
+    if table_dir:
+        import os
+        from urllib.parse import quote
+        for table in tables:
+            table["image_link"] = quote(os.path.relpath(table_dir / table["image"], out.parent).replace(os.sep, '/'), safe='/')
+            for continuation in table.get("continuations", []):
+                if continuation.get("image"):
+                    continuation["image_link"] = quote(os.path.relpath(table_dir / continuation["image"], out.parent).replace(os.sep, '/'), safe='/')
     md = assemble(lines, prof, make_toc=not args.no_toc,
                   math_delims=args.math_delims, doc=doc,
                   figure_dir=fig_dir, figure_vlm=args.figure_vlm, output_dir=out.parent,
@@ -6129,12 +6563,22 @@ def main():
         doc.close()
         sys.exit(f"refusing to overwrite the input file: {out}")
     write_output(out, md)
+    if args.chunks:
+        chunks = markdown_chunks(md, args.chunk_tokens, lambda text: tokenizer.encode(text, disallowed_special=()), tables)
+        destination = Path(args.chunks); destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps({"schema_version": 1, "source": src.name,
+            "tokenizer": args.chunk_tokenizer, "max_tokens": args.chunk_tokens,
+            "provenance": "document-level; table source records are in artifacts/tables.json",
+            "chunks": chunks}, ensure_ascii=False, indent=2), encoding="utf-8")
     if fig_dir is not None and args.figure_vlm:
         fig_dir.mkdir(parents=True, exist_ok=True)
         (fig_dir / "visuals.json").write_text(
             json.dumps(prof.visual_descriptions, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if args.artifacts:
+        directory = Path(args.artifacts); directory.mkdir(parents=True, exist_ok=True)
+        (directory / "coverage.json").write_text(json.dumps(coverage_report(evidence, lines, repairs), ensure_ascii=False, indent=2), encoding="utf-8")
+        (directory / "tables.json").write_text(json.dumps(table_payload(tables), ensure_ascii=False, indent=2), encoding="utf-8")
         write_artifacts(Path(args.artifacts), doc, lines, prof, pages)
         write_quality_artifacts(Path(args.artifacts), src, md, prof, pages, time.perf_counter()-started)
 

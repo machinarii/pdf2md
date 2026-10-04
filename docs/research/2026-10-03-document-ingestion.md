@@ -1,7 +1,11 @@
 # Real-document ingestion: improvement plan
 
-Reviewed 2026-10-03 against pdf2md commit `95bca9d`. These are proposals, not
-implemented capabilities or measured improvements.
+Reviewed 2026-10-03 against pdf2md commit `95bca9d`. The original priorities below are a design plan. An initial implementation now
+provides source-line coverage, detected-table evidence and conservative joins,
+optional table-model alternatives, and optional Markdown chunks; see the
+[usage guide](../usage.md#table-preservation-and-page-coverage). General table
+detection, complete output provenance, calibrated warnings, and the held-out
+evaluation program remain future work. No retrieval improvements have been measured.
 
 ## Reading and source archive
 
@@ -23,7 +27,7 @@ under `artifacts/article-archive/2026-10-03-rag-real-documents/`. External asset
 are not bundled. The source snapshot is excluded from Git; this review is the
 public project record.
 
-## What exists and what is missing
+## Baseline before implementation
 
 This assessment comes from `pdf2md_all.py`, `structured.py`, the architecture
 guide, corpus audit tooling, and our conversion and visual-context evaluations.

@@ -241,3 +241,77 @@ This additional detector is conservative: it requires the caption/rule/source
 pattern and currently skips rotated pages. It does not solve arbitrary report
 layouts or every sidebar. Verify important tables and chart relationships against
 the source.
+
+## Table preservation and page coverage
+
+For PDFs, `--artifacts DIR` now also writes:
+
+- `coverage.json`: every selected page, original native source lines, classification
+  dispositions, image regions, OCR decisions, and concrete review reasons.
+- `tables.json`: detected table cells, headers, context, source IDs, pages, available
+  cell bounds and spans, and continuation evidence.
+- `tables/table-N.png` and `.html`: a source crop and native table representation.
+  Markdown links to the source crop; retain this directory when moving the output.
+
+Blank candidates are distinguished from image/vector pages without recovered text.
+Coverage is source-line accounting, **not a calibrated accuracy score or a complete
+mapping of emitted Markdown**. It cannot detect every misread word or omitted visual.
+A textless conversion still exits with an error, but writes coverage first when
+artifacts are requested. Suppressed roles remain inspectable rather than being
+assumed correct.
+
+Detected tables are matched against native cell geometry. Known merged cells are
+expanded in Markdown; a supported two-row grouped header becomes explicit column
+labels. HTML retains known spans. Unknown spans remain unknown in JSON. Adjacent
+pages join only with matching numbered continuation captions, matching headers,
+and aligned bounds. Uncertain cases remain separate. General detection of every
+complex table, arbitrary header depth, and continuations without repeated headers
+is not implemented.
+
+### Optional table vision
+
+```bash
+python3 pdf2md_all.py report.pdf -o report.md --artifacts artifacts/report \
+  --table-vlm qwen3-vl:30b --ollama-host http://localhost:11434
+```
+
+This saves model alternatives in `tables.json` while keeping native Markdown.
+To explicitly render model candidates, add `--table-render model`. These tables
+are labeled AI-extracted; native cells and grids remain in the audit. Unreadable
+model cells become `[unreadable]`. Failed or malformed responses retain native
+output. Model tables are not automatically joined across pages.
+
+`--table-max-calls 8` limits attempts per document (default eight, no retries,
+180-second generation timeout per attempt). `--no-visual-ai` disables table and
+figure calls. The table option operates on already detected tables; it does not
+add image-only table detection. Cloud model tags may send crops to a provider.
+
+Checks reject invalid row shapes and truncated responses. Numeric-token agreement
+and native/model shape agreement are recorded, but neither establishes correctness
+or header/value association. Successful alternatives are cached by crop, prompt,
+settings, endpoint, model tag, and the digest reported by Ollama; unresolved
+revisions disable reuse. A provider can change a cloud model without changing a
+local tag digest, so cloud reproducibility is not guaranteed. To force a new run,
+use a fresh artifacts directory.
+
+### Optional Markdown chunks
+
+Well-formed Markdown is already useful RAG input. Use this export only if your
+consumer needs help keeping tables intact:
+
+```bash
+pip install tiktoken
+python3 pdf2md_all.py report.pdf -o report.md --artifacts artifacts/report \
+  --chunks report.chunks.json --chunk-tokens 800 --chunk-tokenizer cl100k_base
+```
+
+The JSON records the tokenizer and actual token counts. It keeps ordinary blocks
+intact and splits oversized tables by rows, repeating headers, nearby captured
+captions/notes, and section context. Oversized individual rows, paragraphs, or code
+blocks are preserved and flagged, not truncated. Front-matter metadata is excluded.
+Image links remain relative to the Markdown output location.
+
+Table chunks carry table-level pages and source IDs, not exact per-row attribution.
+Prose chunks have document-level attribution; their page/source-ID lists are empty.
+This exporter does not build an index or establish retrieval gains. It currently
+supports PDF conversions only; EPUB/DOCX users can ingest their Markdown directly.

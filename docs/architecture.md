@@ -59,4 +59,6 @@ and [contribution guide](../CONTRIBUTING.md) for regression testing.
 
 The [real-document ingestion improvement plan](research/2026-10-03-document-ingestion.md)
 prioritizes page coverage checks, table continuity, and structure-preserving chunk
-export. These are proposed extensions, not current guarantees.
+export. Initial coverage, table-preservation, and chunk-export support is described in the
+[usage guide](usage.md#table-preservation-and-page-coverage); the broader plan is
+not a completeness or accuracy guarantee.
