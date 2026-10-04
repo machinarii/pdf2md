@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add PDF page coverage records, detected-table source crops and cell metadata,
+  native span-preserving HTML, explicit grouped headers, and conservative table
+  continuation joins.
+- Add optional Ollama table candidates with bounded attempts, revision-aware cache,
+  schema/truncation checks, and explicit `--table-render model` selection.
+- Add optional tokenizer-counted Markdown chunk export with repeated table context
+  and explicit oversize flags.
+
 - Prefer trustworthy embedded PDF titles when cover typography is extracted as
   separated glyphs or the inferred title swallows body text; otherwise use a
   readable source-filename fallback for demonstrably corrupt titles.
