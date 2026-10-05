@@ -19,8 +19,20 @@ CI verifies that the two copies agree.
    running heads, and heading styles from the current document.
 4. **Classify.** Assign roles such as heading, body, caption, code, table, and
    footnote. Apply document-type and front/back-matter rules.
-5. **Construct and render.** Build heading and paragraph/list relationships,
+5. **Preserve tables.** Match detected tables against native cell geometry, retain
+   known spans, and flatten supported grouped headers into explicit labels. Join
+   numbered continuations only when headers and bounds agree. Optional Ollama
+   candidates remain separate unless `--table-render model` is selected.
+6. **Construct and render.** Build heading and paragraph/list relationships,
    reflow text, and emit Markdown with metadata and an optional contents list.
+7. **Export when requested.** `--artifacts` saves page coverage, table crops and
+   cell evidence alongside the existing tree and repair logs. `--chunks` counts
+   tokens with an optional tokenizer and preserves block/table context for ingestion.
+
+Model table extraction has a per-document attempt cap, a per-call timeout, and
+revision-aware caching. Schema, truncation, numeric-token, and shape checks are
+not factual verification. Failed candidates leave native output intact. Figure
+interpretation uses its separate `--figure-vlm` path and remains unverified context.
 
 The document tree records structural relationships, not a semantic knowledge
 graph. Source records preserve original text locations through some merges and
@@ -41,12 +53,14 @@ python3 tools/sync_structured.py --check
 
 - Unusual columns, sidebars, tables, and wrapped headings can produce incorrect
   structure or reading order. A successful exit does not establish completeness.
-- Sparse numeric tables and multi-row headers remain difficult. Nested tables are
+- Sparse numeric tables, arbitrary header depth, and continuations without repeated
+  headers remain difficult. Table vision operates only on already detected tables.
+  Nested tables are
   flattened; their containment cannot be represented as nested Markdown tables.
 - Equations pass through as approximate text rather than reconstructed LaTeX.
 - Heading checks accept Unicode letters, and Chinese/Japanese line joining avoids artificial spaces. Name and regime heuristics still primarily target English/Latin text.
 - Footnote labels may be page-qualified rather than preserve printed numbering.
-- A coverless book can fall back to the filename even when PDF title metadata exists.
+- Untrustworthy title metadata can fall back to typography or the source filename.
 - Undecodable font encodings can produce plausible-looking nonsense. Warnings
   detect some patterns but do not solve arbitrary substitution encodings.
 - DOCX tracked changes, comments, and text boxes are not fully represented.

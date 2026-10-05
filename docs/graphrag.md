@@ -53,6 +53,11 @@ latency. See [the comparison limits](../benchmarks/comparison-2026-09-19.md).
 
 ### Using the output
 
+Well-formatted Markdown is already suitable input for a RAG system that preserves
+its structure during ingestion. A separate chunk export is optional. The practical
+requirement is to keep values with their headers, units, captions, and source
+references when the downstream system splits the document.
+
 ```bash
 python3 pdf2md_all.py paper.pdf -o paper.md --no-toc --artifacts artifacts/paper
 ```
@@ -63,6 +68,20 @@ The document tree describes layout structure, not semantic entity relationships.
 GraphRAG does not automatically consume pdf2md's tree or bounding boxes; your
 adapter must map them to its input and provenance fields. Review extraction errors
 before indexing, since incorrect cleanup can also remove useful evidence.
+
+For consumers that need explicit row groups, install `tiktoken` and add
+`--chunks paper.chunks.json --chunk-tokens 800`. The exporter repeats table headers
+and captured context, records the tokenizer, and flags oversized blocks without
+truncating them. Table chunks include table-level pages, source IDs, and image
+links; prose attribution remains document-level. It is not a GraphRAG import
+adapter, so map these fields to your consumer's schema.
+
+Inspect `coverage.json` for unrecovered or suppressed source content and
+`tables.json` for table evidence before indexing. These reports expose review
+signals, not accuracy probabilities. Model-rendered table chunks retain an AI
+label and should be reviewed against their source crops. See the
+[usage guide](usage.md#table-preservation-and-page-coverage) and
+[table smoke test](../benchmarks/table-preservation.md).
 
 To validate the benefit, compare both conversions on identical held-out documents
 with the same GraphRAG settings. Measure token and chunk counts, model calls,

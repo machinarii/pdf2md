@@ -73,6 +73,9 @@ Output includes inferred headings, reflowed text, YAML metadata, and a table of
 contents unless disabled. DOC, ODT, and RTF input additionally requires LibreOffice.
 Use `--max-file-size SIZE` to refuse oversized input before parsing; decimal
 (`MB`, `GB`) and binary (`MiB`, `GiB`) units are supported, as are raw bytes.
+For PDF table crops, cell evidence, and page coverage, add `--artifacts artifacts/book`.
+Optional table vision and tokenizer-counted chunk export are documented in the
+[table and RAG usage guide](docs/usage.md#table-preservation-and-page-coverage).
 Run `python3 pdf2md_all.py --help` for all options.
 
 ## Agent skills
