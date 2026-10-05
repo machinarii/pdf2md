@@ -23,7 +23,7 @@ directory. In that directory, install this tested revision (Python 3.10+ and Git
 
 ```bash
 git clone https://github.com/machinarii/pdf2md.git pdf2md
-git -C pdf2md checkout --detach 0bb4a352a4d8c3e2df2ecfce1e751d59d35084c7
+git -C pdf2md checkout --detach 420b3cc1c86db563f0a209a41d944050b533f2f0
 python3 -m venv pdf2md/.venv
 pdf2md/.venv/bin/python -m pip install -r pdf2md/requirements.txt
 pdf2md/.venv/bin/python pdf2md/pdf2md_all.py --version
@@ -82,3 +82,27 @@ user's selected model; do not download one or send figures to a remote/cloud mod
 without authorization. `--ollama-host URL` changes the server. AI descriptions are
 unverified context and must remain identified as generated, with their source
 images retained. Omit `--figure-vlm` for extraction without model inference.
+
+
+## Tables, coverage, and optional chunks
+
+For PDF input, `--artifacts DIR` also saves `coverage.json`, `tables.json`, and
+`tables/` containing PNG source crops and native HTML. Review unaccounted or
+suppressed source lines and pages without recovered content. Coverage is not an
+accuracy score. Retain the artifact directory when moving Markdown with crop links.
+
+If authorized to use the selected Ollama model, `--table-vlm MODEL --artifacts DIR`
+saves reviewable alternatives while retaining native Markdown. Only add
+`--table-render model` when model-rendered tables are wanted; they remain labeled
+AI-extracted. The default `--table-max-calls 8` bounds attempts. Failed responses
+keep native output. This does not detect tables on arbitrary image-only pages.
+`--no-visual-ai` disables figure and table calls and conflicts with model rendering.
+The remote/cloud authorization rule above applies equally to table crops.
+
+Correctly formatted Markdown may already meet the user's RAG needs. If explicit
+chunks are requested, install optional `tiktoken` into the converter environment
+and use `--chunks /path/to/chunks.json --chunk-tokens 800`. Headers and captured
+table context repeat across row groups. Oversized blocks are flagged rather than
+truncated. Table attribution is table-level; prose attribution is document-level.
+These options currently support PDF input only. Do not claim measured retrieval
+improvements from conversion tests or model agreement alone.

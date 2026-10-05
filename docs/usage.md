@@ -18,11 +18,14 @@ python3 pdf2md_all.py in.pdf --pages 44-120           # subset (1-based, inclusi
 python3 pdf2md_all.py in.pdf --max-file-size 500MiB   # refuse larger input before parsing
 python3 pdf2md_all.py in.pdf --skip-mostly-images     # skip photobooks (60% default)
 python3 pdf2md_all.py in.pdf --no-visual-ai           # never call a vision model
-python3 pdf2md_all.py in.pdf --artifacts DIR          # tree, provenance, repairs, profile, blocks, pages
+python3 pdf2md_all.py in.pdf --artifacts DIR          # tree, coverage, tables, provenance, repairs, blocks
 python3 pdf2md_all.py scan.pdf --ocr auto --ocr-language eng --artifacts DIR
 python3 pdf2md_all.py in.pdf --emit-json blocks.json  # typed blocks for RAG chunking
 python3 pdf2md_all.py in.pdf --figure-dir figs        # crop figures to PNG and link them
 python3 pdf2md_all.py in.pdf --figure-dir figs --figure-vlm qwen3.8:27b
+python3 pdf2md_all.py in.pdf --artifacts DIR --table-vlm MODEL  # save table alternatives
+python3 pdf2md_all.py in.pdf --artifacts DIR --table-vlm MODEL --table-render model
+python3 pdf2md_all.py in.pdf --chunks chunks.json --chunk-tokens 800  # optional tiktoken
 python3 pdf2md_all.py in.pdf --body-only              # chapters only
 python3 pdf2md_all.py in.pdf --title T --author A --author B
 python3 pdf2md_all.py in.pdf --no-toc
@@ -40,7 +43,12 @@ For PDFs, a page is image-dominant when raster images cover at least half its
 area; EPUB and DOCX use the share of meaningful content blocks that are images.
 This check uses document geometry and metadata only—it does not call AI or try
 to interpret the images. `--no-visual-ai` (also `--no-figure-vlm`) overrides a
-supplied `--figure-vlm` option, which is useful in shared batch configurations.
+supplied `--figure-vlm` and `--table-vlm` options, which is useful in shared batch
+configurations. Combining it with `--table-render model` is an argument error.
+
+Table-model and chunk-export options currently support PDF input only. See
+[table preservation and page coverage](#table-preservation-and-page-coverage)
+for dependencies, model limits, cache behavior, and output formats.
 
 The filename convention `<author>#<title>[#index].pdf` is recognised for metadata. `--artifacts` writes what every stage decided — `blocks.jsonl` has every line with kind, regime, level, geometry and text — which is how to debug: read the decision log, don't add prints.
 
@@ -105,6 +113,10 @@ the existing profile and block exports, artifacts now include:
 - `repairs.json`: original and candidate text, crop location, backend, language,
   confidence, and accepted/rejected/skipped decision. Written even if OCR does
   not recover enough text for conversion.
+- `coverage.json`: source-line dispositions and review reasons for every selected
+  PDF page; blank candidates are distinct from pages with unrecovered content.
+- `tables.json` and `tables/`: detected table evidence, PNG crops, native HTML, and
+  optional model candidates. Keep the crops with Markdown to preserve its links.
 - `blocks.jsonl`: classified lines with original source records, including
   furniture that does not appear in Markdown.
 

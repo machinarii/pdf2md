@@ -4,7 +4,12 @@ The [pdf2md skill](../plugins/pdf2md/skills/pdf2md/SKILL.md) is shared by Claude
 Code, Codex, OpenClaw, and Hermes. It installs the converter separately at a tested
 commit and runs it locally. Python 3.10+, Git, and PyMuPDF are required; Tesseract,
 LibreOffice, and Ollama are optional. Ordinary conversion needs no account or API key.
-Plugin version 0.1.0 targets converter version 0.2.0.
+Plugin version 0.1.0 targets converter version 0.2.0. The skill's tested install
+revision is `420b3cc1c86db563f0a209a41d944050b533f2f0`, including table evidence,
+page coverage, and optional PDF chunk export. Existing checkouts are not changed
+automatically; confirm options with `--help`. Chunk export additionally requires
+`tiktoken`; table vision requires a user-selected Ollama model and explicit flags.
+See the [usage guide](usage.md#table-preservation-and-page-coverage).
 
 ## Claude Code
 

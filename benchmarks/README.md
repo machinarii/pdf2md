@@ -50,6 +50,17 @@ ignore case. Text-presence checks are case-sensitive and normalize whitespace
 only. Prefer unique anchors to avoid matching a table-of-contents entry instead
 of the body. A global absence check does not replace a transcription reference.
 
+## Available reports
+
+- [Converter comparison](comparison-2026-09-19.md): development corpus and MarkItDown.
+- [Token usage](token-usage.md): measured text token counts and estimation limits.
+- [Visual descriptions](visual-context.md): figure-model errors and timings.
+- [Table preservation](table-preservation.md): source cells, model alternatives,
+  chunk preservation, and measured audit overhead on a small sample.
+
+The table smoke test is separate from the figure-description evaluation. Neither
+establishes a general model ranking or downstream retrieval gains.
+
 ## Interpreting results
 
 [The September 19, 2026 development comparison](comparison-2026-09-19.md)
