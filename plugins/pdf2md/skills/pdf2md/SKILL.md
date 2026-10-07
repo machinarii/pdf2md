@@ -23,7 +23,7 @@ directory. In that directory, install this tested revision (Python 3.10+ and Git
 
 ```bash
 git clone https://github.com/machinarii/pdf2md.git pdf2md
-git -C pdf2md checkout --detach 420b3cc1c86db563f0a209a41d944050b533f2f0
+git -C pdf2md checkout --detach 821d6e1f2568e148d9d2e7d7215352433c5b6a94
 python3 -m venv pdf2md/.venv
 pdf2md/.venv/bin/python -m pip install -r pdf2md/requirements.txt
 pdf2md/.venv/bin/python pdf2md/pdf2md_all.py --version
@@ -106,3 +106,22 @@ table context repeat across row groups. Oversized blocks are flagged rather than
 truncated. Table attribution is table-level; prose attribution is document-level.
 These options currently support PDF input only. Do not claim measured retrieval
 improvements from conversion tests or model agreement alone.
+
+
+## Structured preservation and strict review
+
+DOCX/EPUB tables preserve source spans and explicit header rows. Supported native
+OMML/MathML equations become inline LaTeX; inspect `math.json` for converted and
+unsupported source expressions when artifacts are enabled. Do not claim this
+reconstructs equations from PDF images. Parser budgets fail explicitly on oversized
+archive/XML/table expansion rather than truncating output.
+
+For a PDF where partial output is unacceptable, use `--strict-coverage --artifacts DIR`.
+Review any refusal against `coverage.json`; do not silently rerun without the gate.
+The gate detects known coverage signals, not every semantic or transcription error.
+
+For programmatic text-only conversion, `pdf2md_api.convert_file` and `convert_bytes`
+return Markdown, diagnostics, and detected format in an isolated subprocess.
+The API supports PDF/EPUB/DOCX, disables OCR/models and embedded-image extraction,
+and has input-size and timeout limits. Use the CLI when persistent images or audits
+are required. The API is provided in the checkout, not as a published package.
