@@ -52,6 +52,8 @@ of the body. A global absence check does not replace a transcription reference.
 
 ## Available reports
 
+- [AnyDoc follow-up](anydoc-review.md): limited DOCX/EPUB fixture comparison and remaining gaps.
+
 - [Converter comparison](comparison-2026-09-19.md): development corpus and MarkItDown.
 - [Token usage](token-usage.md): measured text token counts and estimation limits.
 - [Visual descriptions](visual-context.md): figure-model errors and timings.

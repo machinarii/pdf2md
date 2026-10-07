@@ -327,3 +327,56 @@ Table chunks carry table-level pages and source IDs, not exact per-row attributi
 Prose chunks have document-level attribution; their page/source-ID lists are empty.
 This exporter does not build an index or establish retrieval gains. It currently
 supports PDF conversions only; EPUB/DOCX users can ingest their Markdown directly.
+
+## Strict PDF coverage
+
+```bash
+python3 pdf2md_all.py report.pdf -o report.md \
+  --strict-coverage --artifacts artifacts/report
+```
+
+Strict mode writes `coverage.json` and refuses to write Markdown if the pre-render
+coverage check has review reasons, including image-only pages with no recovered
+content, rejected OCR, unaccounted source lines, or completely suppressed native
+content. An existing Markdown output is left untouched. Blank candidates do not
+trigger a coverage failure. The flag requires artifacts and is PDF-only.
+
+This is an opt-in gate over observable signals, not proof of complete or accurate
+extraction. It does not identify every unread image region on an otherwise readable
+page, judge model claims, or establish that all classified text was emitted.
+Intentional whole-page suppression can also trigger review.
+
+## Structured tables and equations
+
+EPUB and DOCX table readers retain cell origins, row/column spans, covered
+positions, and explicit leading header rows. Markdown repeats merged values where
+needed and flattens grouped headers into explicit labels. Headerless tables get an
+empty Markdown header rather than treating the first data row as a header. Data
+tables with short labels are no longer automatically mistaken for document metadata.
+
+With `--artifacts`, structured `blocks.jsonl` includes canonical cell positions
+and header counts. PDF `tables.json` uses the same canonical representation when
+native spans are known. This does not solve PDF table discovery or preserve nested
+tables losslessly.
+
+A conservative subset of DOCX OMML and EPUB MathML becomes inline LaTeX: fractions,
+scripts, square/indexed roots, token sequences, and selected Unicode operators.
+Unsupported expressions are labeled `[unconverted equation: ...]`; source XML and
+conversion status are retained in `math.json` when artifacts are enabled. General
+matrices, n-ary operators, styling semantics, and arbitrary equation constructs are
+not yet supported. This does not reconstruct equations from PDF text or images.
+EPUB conversion currently recognizes unprefixed `<math>` elements.
+
+## Parser budgets and text-only output
+
+DOCX and EPUB parsing enforces fixed budgets: 128 MiB per decompressed archive
+entry, 512 MiB declared archive content and cumulative reads, 100,000 entries,
+XML depth 256, 500,000 XML nodes per part, and 1,000,000 table positions. HTML
+chapter parsing also limits node count and nesting. XML DTD/entity declarations
+are rejected. Exceeding a budget fails explicitly rather than silently truncating.
+These budgets supplement `--max-file-size`; they are not a general sandbox or a
+memory guarantee for PyMuPDF or LibreOffice.
+
+`--no-images` disables embedded-image extraction in structured documents and keeps
+image labels as text. It conflicts with `--figure-dir`. Use it when moving only
+Markdown, or use the [Python API](python-api.md), which selects this mode automatically.

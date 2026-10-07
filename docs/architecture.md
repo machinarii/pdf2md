@@ -42,7 +42,13 @@ transformations. They do not map every Markdown byte to the original PDF.
 
 EPUB readers follow spine order and use HTML/CSS evidence for structure. DOCX
 readers use document elements and styles. DOC, ODT, and RTF are converted through
-LibreOffice. For structured reader changes, edit `structured.py` and run:
+LibreOffice. DOCX/EPUB table spans use the same canonical origin/covered-position
+schema exposed for known PDF cells. Supported native OMML/MathML expressions
+become LaTeX; unsupported forms remain labeled with source XML in optional audits.
+Archive, XML, HTML, and table-expansion budgets bound structured parsing.
+
+The optional [Python API](python-api.md) isolates conversions in subprocesses and
+accepts paths or bytes. For structured reader changes, edit `structured.py` and run:
 
 ```bash
 python3 tools/sync_structured.py
@@ -57,7 +63,8 @@ python3 tools/sync_structured.py --check
   headers remain difficult. Table vision operates only on already detected tables.
   Nested tables are
   flattened; their containment cannot be represented as nested Markdown tables.
-- Equations pass through as approximate text rather than reconstructed LaTeX.
+- PDF equations pass through as approximate text rather than reconstructed LaTeX.
+  Native DOCX/EPUB equation conversion supports only the documented subset.
 - Heading checks accept Unicode letters, and Chinese/Japanese line joining avoids artificial spaces. Name and regime heuristics still primarily target English/Latin text.
 - Footnote labels may be page-qualified rather than preserve printed numbering.
 - Untrustworthy title metadata can fall back to typography or the source filename.

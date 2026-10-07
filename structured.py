@@ -42,6 +42,202 @@ class Block:
     ordered: bool = False
     size: float = 0.0              # CSS font size (pt) when known
     bold: bool = False
+    cells: list = field(default_factory=list)
+    header_rows: int = 1
+
+
+class ResourceLimitError(ValueError):
+    """The source exceeds a bounded parser budget."""
+
+
+MAX_ENTRY_BYTES = 128 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 100_000
+MAX_XML_DEPTH = 256
+MAX_XML_NODES = 500_000
+MAX_TABLE_SLOTS = 1_000_000
+
+
+class BoundedZip(zipfile.ZipFile):
+    def __init__(self, path):
+        super().__init__(path)
+        self.bytes_read = 0
+        entries = self.infolist()
+        if (len(entries) > MAX_ARCHIVE_ENTRIES or
+                any(e.file_size > MAX_ENTRY_BYTES for e in entries) or
+                sum(e.file_size for e in entries) > MAX_ARCHIVE_BYTES):
+            self.close()
+            raise ResourceLimitError('archive decompression budget exceeded')
+
+    def read(self, name, pwd=None):
+        info = name if isinstance(name, zipfile.ZipInfo) else self.getinfo(name)
+        if self.bytes_read + info.file_size > MAX_ARCHIVE_BYTES:
+            raise ResourceLimitError('cumulative archive read budget exceeded')
+        with self.open(info, pwd=pwd) as stream:
+            data = stream.read(MAX_ENTRY_BYTES + 1)
+        self.bytes_read += len(data)
+        if len(data) > MAX_ENTRY_BYTES or self.bytes_read > MAX_ARCHIVE_BYTES:
+            raise ResourceLimitError('archive read budget exceeded')
+        return data
+
+
+def bounded_xml(data):
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    if len(data) > MAX_ENTRY_BYTES:
+        raise ResourceLimitError('XML byte budget exceeded')
+    if b'<!ENTITY' in data.replace(b'\x00', b'').upper() or b'<!DOCTYPE' in data.replace(b'\x00', b'').upper():
+        raise ResourceLimitError('XML DTD and entity declarations are not supported')
+    parser = ET.XMLPullParser(events=('start', 'end'))
+    depth = count = 0
+    root = None
+    for offset in range(0, len(data), 65536):
+        parser.feed(data[offset:offset+65536])
+        for event, element in parser.read_events():
+            if event == 'start':
+                if root is None:
+                    root = element
+                depth += 1; count += 1
+                if depth > MAX_XML_DEPTH or count > MAX_XML_NODES:
+                    raise ResourceLimitError('XML depth/node budget exceeded')
+            else:
+                depth -= 1
+    parser.close()
+    if root is None:
+        raise ET.ParseError('empty XML')
+    return root
+
+
+def canonical_table(cells):
+    """One origin per logical cell; covered positions explicitly reference it."""
+    slots = {}
+    for source in cells:
+        r, c = source['row'], source['column']
+        rs, cs = source.get('rowspan') or 1, source.get('colspan') or 1
+        if min(r, c) < 0 or min(rs, cs) < 1 or (r+rs)*(c+cs) > MAX_TABLE_SLOTS:
+            raise ResourceLimitError('table expansion budget exceeded')
+        if len(slots) + rs*cs > MAX_TABLE_SLOTS:
+            raise ResourceLimitError('table slot budget exceeded')
+        for rr in range(r, r+rs):
+            for cc in range(c, c+cs):
+                if (rr, cc) in slots:
+                    raise ValueError('overlapping table spans')
+                slots[rr, cc] = (dict(source, rowspan=rs, colspan=cs) if (rr, cc) == (r, c)
+                                else {'row': rr, 'column': cc, 'covered_by': [r, c]})
+    return [slots[k] for k in sorted(slots)]
+
+
+def expanded_table(cells):
+    slots = canonical_table(cells)
+    if not slots:
+        return []
+    height = max(s['row'] for s in slots)+1
+    width = max(s['column'] for s in slots)+1
+    if height*width > MAX_TABLE_SLOTS:
+        raise ResourceLimitError('table grid budget exceeded')
+    origins = {(c['row'], c['column']): c.get('text', '') for c in cells}
+    rows = [[''] * width for _ in range(height)]
+    for slot in slots:
+        origin = tuple(slot.get('covered_by', [slot['row'], slot['column']]))
+        rows[slot['row']][slot['column']] = origins[origin]
+    return rows
+
+
+def structured_table_rows(block):
+    rows = expanded_table(block.cells) if block.cells else block.rows
+    depth = min(block.header_rows, len(rows))
+    if depth > 1:
+        header = [' — '.join(dict.fromkeys(rows[r][c] for r in range(depth) if rows[r][c]))
+                  for c in range(len(rows[0]))]
+        return [header] + rows[depth:]
+    if depth == 0:
+        return [[''] * max(map(len, rows), default=0)] + rows
+    return rows
+
+
+class UnsupportedMath(ValueError):
+    pass
+
+
+def math_latex(element):
+    """Translate explicit MathML/OMML structure; never infer PDF equations."""
+    tag = element.tag.rsplit('}', 1)[-1]
+    if element.get('mathvariant') not in (None, 'normal', 'italic'):
+        raise UnsupportedMath('unsupported math variant')
+    children = list(element)
+    def child(name):
+        return next((x for x in children if x.tag.rsplit('}', 1)[-1] == name), None)
+    def convert(node):
+        return math_latex(node) if node is not None else ''
+    def sequence():
+        return ''.join(convert(x) for x in children)
+    if tag in ('mi', 'mn', 'mo', 't'):
+        text = element.text or ''
+        symbols = {'α':r'\alpha ', 'β':r'\beta ', 'γ':r'\gamma ', 'θ':r'\theta ',
+                   'π':r'\pi ', '∑':r'\sum ', '∫':r'\int ', '∞':r'\infty ',
+                   '≤':r'\le ', '≥':r'\ge ', '≠':r'\ne ', '×':r'\times ', '−':'-'}
+        return ''.join(symbols.get(c, '\\'+c if c in '{}%&#_$' else c) for c in text)
+    if tag == 'mtext':
+        return r'\text{' + (element.text or '').replace('\\', r'\backslash ').replace('{',r'\{').replace('}',r'\}') + '}'
+    if tag in ('math','mrow','oMath','oMathPara','e','num','den','sup','sub','deg','r'):
+        return sequence()
+    if tag in ('rPr','ctrlPr','fPr','sSupPr','sSubPr','sSubSupPr','radPr'):
+        return ''
+    if tag in ('mfrac','f'):
+        props = child('fPr')
+        if props is not None and any(n.tag.rsplit('}',1)[-1] == 'type' and
+                next(iter(n.attrib.values()), 'bar') != 'bar' for n in props):
+            raise UnsupportedMath('unsupported fraction layout')
+        a,b = (children if tag == 'mfrac' else [child('num'),child('den')])
+        if a is None or b is None:
+            raise UnsupportedMath('missing fraction operand')
+        return r'\frac{' + convert(a) + '}{' + convert(b) + '}'
+    if tag in ('msup','msub','msubsup'):
+        needed = 3 if tag == 'msubsup' else 2
+        if len(children) != needed:
+            raise UnsupportedMath('invalid script arity')
+        base = '{' + convert(children[0]) + '}'
+        return base + (('_' if tag != 'msup' else '^') + '{' + convert(children[1]) + '}') + (
+            '^{' + convert(children[2]) + '}' if needed == 3 else '')
+    if tag in ('sSup','sSub','sSubSup'):
+        return '{' + convert(child('e')) + '}' + (
+            '_{' + convert(child('sub')) + '}' if tag != 'sSup' else '') + (
+            '^{' + convert(child('sup')) + '}' if tag != 'sSub' else '')
+    if tag == 'msqrt':
+        return r'\sqrt{' + sequence() + '}'
+    if tag in ('mroot','rad'):
+        if tag == 'mroot':
+            if len(children) != 2:
+                raise UnsupportedMath('invalid root arity')
+            base, degree = children
+        else:
+            base, degree = child('e'), child('deg')
+        index = convert(degree)
+        props = child('radPr')
+        if props is not None and any(n.tag.rsplit('}',1)[-1] == 'degHide' and
+                next(iter(n.attrib.values()), '1') in ('1', 'true', 'on') for n in props):
+            index = ''
+        return r'\sqrt' + ('['+index+']' if index else '') + '{' + convert(base) + '}'
+    if tag == 'semantics':
+        return convert(children[0]) if children else ''
+    raise UnsupportedMath('unsupported math element: ' + tag)
+
+
+def math_record(element):
+    source = ET.tostring(element, encoding='unicode')
+    try:
+        latex = math_latex(element)
+        if not latex.strip():
+            raise UnsupportedMath('empty formula')
+        return {'source_xml': source, 'latex': latex, 'status': 'converted'}
+    except (UnsupportedMath, ValueError) as error:
+        return {'source_xml': source, 'text': ' '.join(element.itertext()).strip(),
+                'status': 'unsupported', 'reason': str(error)}
+
+
+def math_text(record):
+    return ('$' + record['latex'] + '$' if record['status'] == 'converted' else
+            '[unconverted equation: ' + record.get('text', '') + ']')
 
 
 GENERATOR_NAMES = re.compile(r"^(python-docx|libreoffice|openoffice|microsoft (office )?(word|user)|"
@@ -183,7 +379,12 @@ class _HtmlBlocks(HTMLParser):
         self.in_title = False
         self.suppress = 0                   # inside a noteref / backlink anchor
         self.open_els: list[tuple[str, list[str]]] = []   # (tag, state to undo on close)
-        self.table_stack: list[list[list[str]]] = []      # enclosing tables' rows
+        self.origins = []
+        self.table_occupied = set()
+        self.cell_info = None
+        self.table_headers = set()
+        self.html_nodes = 0
+        self.table_stack: list = []      # enclosing tables' rows
 
     # ---- helpers
     def _apply_style(self, cls: str):
@@ -221,6 +422,9 @@ class _HtmlBlocks(HTMLParser):
     # that nothing ever lowered: everything after it in the file was silently
     # dropped, or silently relabelled a footnote.
     def handle_starttag(self, tag, attrs):
+        self.html_nodes += 1
+        if self.html_nodes > MAX_XML_NODES or len(self.open_els) > MAX_XML_DEPTH:
+            raise ResourceLimitError('HTML depth/node budget exceeded')
         a = dict(attrs)
         types = (a.get("epub:type") or a.get("role") or "").lower()
         cls = (a.get("class") or "").lower()
@@ -267,12 +471,23 @@ class _HtmlBlocks(HTMLParser):
         elif tag == "table":
             # A nested table used to wipe the enclosing table's rows.
             self._flush(); self.in_table += 1
-            self.table_stack.append(self.rows); self.rows = []
+            self.table_stack.append((self.rows, self.origins, self.cell, self.cell_info, self.table_headers, self.table_occupied))
+            self.rows = []; self.origins = []; self.cell = None; self.cell_info = None; self.table_headers = set(); self.table_occupied = set()
             undo.append("table")
         elif tag == "tr":
             self.rows.append([])
         elif tag in ("td", "th"):
             self.cell = []
+            row = max(0, len(self.rows)-1)
+            col = 0
+            while (row, col) in self.table_occupied:
+                col += 1
+            rs, cs = int(a.get('rowspan', '1')), int(a.get('colspan', '1'))
+            if min(rs, cs) < 1 or (row+rs)*(col+cs) > MAX_TABLE_SLOTS:
+                raise ResourceLimitError('HTML table expansion budget exceeded')
+            self.cell_info = {'row': row, 'column': col, 'rowspan': rs, 'colspan': cs, 'text': '', 'is_header': (tag == 'th' and a.get('scope') != 'row') or any(t == 'thead' for t, _ in self.open_els)}
+            if tag == 'th':
+                self.table_headers.add(row)
         elif tag == "img":
             self._flush()
             self.blocks.append(Block("image", text=a.get("alt", ""), src=a.get("src", "")))
@@ -354,7 +569,20 @@ class _HtmlBlocks(HTMLParser):
             self._flush()
         elif tag in ("td", "th"):
             if self.cell is not None and self.rows:
-                self.rows[-1].append(re.sub(r"\s+", " ", "".join(self.cell)).strip())
+                text = re.sub(r"\s+", " ", "".join(self.cell)).strip()
+                self.rows[-1].append(text)
+                if self.cell_info is not None:
+                    self.cell_info['text'] = text
+                    info = self.cell_info
+                    if len(self.table_occupied) + info['rowspan']*info['colspan'] > MAX_TABLE_SLOTS:
+                        raise ResourceLimitError('HTML table slot budget exceeded')
+                    for rr in range(info['row'], info['row']+info['rowspan']):
+                        for cc in range(info['column'], info['column']+info['colspan']):
+                            if (rr, cc) in self.table_occupied:
+                                raise ValueError('overlapping HTML table spans')
+                            self.table_occupied.add((rr, cc))
+                    self.origins.append(info)
+                    self.cell_info = None
             self.cell = None
 
         if "list" in undo:
@@ -367,10 +595,16 @@ class _HtmlBlocks(HTMLParser):
             self._flush(); self.in_pre = max(0, self.in_pre - 1)
         if "table" in undo:
             self.in_table = max(0, self.in_table - 1)
-            rows = [r for r in self.rows if any(c.strip() for c in r)]
-            if rows:
-                self.blocks.append(Block("table", rows=rows))
-            self.rows = self.table_stack.pop() if self.table_stack else []
+            if self.origins:
+                depth = 0
+                while any(c['row'] == depth for c in self.origins) and all(
+                        c.get('is_header') for c in self.origins if c['row'] == depth):
+                    depth += 1
+                self.blocks.append(Block('table', rows=expanded_table(self.origins), cells=self.origins, header_rows=depth))
+            if self.table_stack:
+                self.rows, self.origins, self.cell, self.cell_info, self.table_headers, self.table_occupied = self.table_stack.pop()
+            else:
+                self.rows = []; self.origins = []; self.cell = None; self.cell_info = None; self.table_headers = set(); self.table_occupied = set()
         if "note" in undo:
             self._flush()
             if self.note: self.note.pop()
@@ -437,14 +671,14 @@ NS = {"c": "urn:oasis:names:tc:opendocument:xmlns:container",
 
 
 def read_epub(path: Path) -> tuple[dict, list[Block]]:
-    z = zipfile.ZipFile(path)
-    container = ET.fromstring(z.read("META-INF/container.xml"))
+    z = BoundedZip(path)
+    container = bounded_xml(z.read("META-INF/container.xml"))
     rootfile = container.find(".//c:rootfile", NS)
     if rootfile is None or not rootfile.get("full-path"):
         raise KeyError("META-INF/container.xml names no rootfile")
     opf_path = rootfile.get("full-path")
     opf_dir = str(Path(opf_path).parent)
-    opf = ET.fromstring(z.read(opf_path))
+    opf = bounded_xml(z.read(opf_path))
 
     # ---- metadata
     def dc(tag):
@@ -493,7 +727,7 @@ def read_epub(path: Path) -> tuple[dict, list[Block]]:
     if nav_href and zpath(nav_href) in z.namelist():
         toc = _parse_nav(decode_xml(z.read(zpath(nav_href))))
     elif ncx_id in items and zpath(items[ncx_id][0]) in z.namelist():
-        ncx = ET.fromstring(z.read(zpath(items[ncx_id][0])))
+        ncx = bounded_xml(z.read(zpath(items[ncx_id][0])))
         def walk(np, depth):
             for pt in np.findall("ncx:navPoint", NS):
                 lbl = pt.find("ncx:navLabel/ncx:text", NS)
@@ -521,7 +755,18 @@ def read_epub(path: Path) -> tuple[dict, list[Block]]:
         zp = zpath(href)
         if zp not in z.namelist():
             continue
-        title, chapter = html_to_blocks(decode_xml(z.read(zp)), style_map,
+        markup = decode_xml(z.read(zp))
+        def replace_math(match):
+            from html import escape
+            try:
+                record = math_record(bounded_xml(match.group(0)))
+            except ET.ParseError as error:
+                record = {'status': 'unsupported', 'source_xml': match.group(0),
+                          'text': re.sub(r'<[^>]*>', '', match.group(0)), 'reason': str(error)}
+            meta.setdefault('math', []).append(record)
+            return escape(math_text(record))
+        markup = re.sub(r'<math\b[^>]*>.*?</math\s*>', replace_math, markup, flags=re.S|re.I)
+        title, chapter = html_to_blocks(markup, style_map,
                                         spine_index=spine_pos, href=href)
         idx = spine_pos.get(unquote(href.split("#")[0]), 0) + 1
         for b in chapter:
@@ -600,12 +845,12 @@ def w(tag): return "{%s}%s" % (W, tag)
 
 
 def read_docx(path: Path) -> tuple[dict, list[Block]]:
-    z = zipfile.ZipFile(path)
+    z = BoundedZip(path)
     names = set(z.namelist())
     meta = {"title": "", "authors": [], "publisher": None, "date": None, "year": None,
             "isbn": [], "language": None, "toc": [], "format": "docx"}
     if "docProps/core.xml" in names:
-        core = ET.fromstring(z.read("docProps/core.xml"))
+        core = bounded_xml(z.read("docProps/core.xml"))
         t = core.find("dc:title", DCP); meta["title"] = (t.text or "").strip() if t is not None and t.text else ""
         c = core.find("dc:creator", DCP)
         creator = (c.text or "").strip() if c is not None else ""
@@ -620,7 +865,7 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
     # ---- styles: id -> (name, outline level)
     styles: dict[str, tuple[str, int | None, str | None]] = {}
     if "word/styles.xml" in names:
-        st = ET.fromstring(z.read("word/styles.xml"))
+        st = bounded_xml(z.read("word/styles.xml"))
         for s in st.findall(w("style")):
             sid = s.get(w("styleId")) or ""
             name_el = s.find(w("name")); name = name_el.get(w("val")) if name_el is not None else sid
@@ -651,7 +896,7 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
     notes: dict[str, str] = {}
     for part in ("word/footnotes.xml", "word/endnotes.xml"):
         if part in names:
-            fn = ET.fromstring(z.read(part))
+            fn = bounded_xml(z.read(part))
             tag = "footnote" if "footnotes" in part else "endnote"
             for n in fn.findall(w(tag)):
                 nid = n.get(w("id"))
@@ -662,12 +907,14 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
     # ---- relationships (images)
     rels: dict[str, str] = {}
     if "word/_rels/document.xml.rels" in names:
-        rel = ET.fromstring(z.read("word/_rels/document.xml.rels"))
+        rel = bounded_xml(z.read("word/_rels/document.xml.rels"))
         for r in rel:
             rels[r.get("Id")] = "word/" + r.get("Target") if not r.get("Target", "").startswith("/") else r.get("Target").lstrip("/")
 
     # ---- body
-    doc = ET.fromstring(z.read("word/document.xml"))
+    doc = bounded_xml(z.read("word/document.xml"))
+    meta['math'] = [math_record(node) for node in doc.iter()
+                    if node.tag.rsplit('}', 1)[-1] == 'oMath']
     body = doc.find(w("body"))
     if body is None:
         raise KeyError("word/document.xml has no w:body")
@@ -718,15 +965,39 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
                     else:
                         blocks.append(Block("para", text=text))
             elif el.tag == w("tbl"):
-                rows = []
-                for tr in el.findall(w("tr")):
-                    cells = []
-                    for tc in tr.findall(w("tc")):
-                        cells.append(" ".join(_para_text(p, None)[0] for p in tc.findall(w("p"))).strip())
-                    if any(cells):
-                        rows.append(cells)
-                if rows:
-                    blocks.append(Block("table", rows=rows))
+                origins = []
+                previous = {}
+                header_rows = 0
+                for ri, tr in enumerate(el.findall(w('tr'))):
+                    props = tr.find(w('trPr'))
+                    if (ri == header_rows and props is not None and props.find(w('tblHeader')) is not None
+                            and props.find(w('tblHeader')).get(w('val'), '1') not in ('0', 'false', 'off')):
+                        header_rows += 1
+                    before = props.find(w('gridBefore')) if props is not None else None
+                    col = int(before.get(w('val'), '0')) if before is not None else 0
+                    active = {}
+                    for tc in tr.findall(w('tc')):
+                        prop = tc.find(w('tcPr'))
+                        span_node = prop.find(w('gridSpan')) if prop is not None else None
+                        span = int(span_node.get(w('val'), '1')) if span_node is not None else 1
+                        if span < 1 or (ri+1)*(col+span) > MAX_TABLE_SLOTS:
+                            raise ResourceLimitError('DOCX table expansion budget exceeded')
+                        merge = prop.find(w('vMerge')) if prop is not None else None
+                        text = ' '.join(_para_text(p, None)[0] for p in tc.findall(w('p'))).strip()
+                        if merge is not None and merge.get(w('val')) != 'restart':
+                            origin = previous.get(col)
+                            if origin is None or origin['colspan'] != span or text:
+                                raise ValueError('invalid DOCX vertical table continuation')
+                            origin['rowspan'] += 1
+                        else:
+                            origin = {'row': ri, 'column': col, 'rowspan': 1, 'colspan': span, 'text': text}
+                            origins.append(origin)
+                        if merge is not None:
+                            active[col] = origin
+                        col += span
+                    previous = active
+                if origins:
+                    blocks.append(Block('table', rows=expanded_table(origins), cells=origins, header_rows=header_rows))
             elif el.tag in (w("sdt"),):
                 content = el.find(w("sdtContent"))
                 if content is not None:
@@ -748,7 +1019,15 @@ def read_docx(path: Path) -> tuple[dict, list[Block]]:
 def _para_text(p, rels) -> tuple[str, list[str], list[tuple[str, str]]]:
     """Text of a w:p with inline emphasis, footnote refs and images."""
     out: list[str] = []; refs: list[str] = []; images: list[tuple[str, str]] = []
-    for r in p.iter():
+    def walk_inline(node):
+        yield node
+        if node.tag.rsplit('}', 1)[-1] not in ('oMath', 'oMathPara'):
+            for item in node:
+                yield from walk_inline(item)
+    for r in walk_inline(p):
+        if r.tag.rsplit('}', 1)[-1] in ('oMath', 'oMathPara'):
+            out.append(math_text(math_record(r)))
+            continue
         if r.tag == w("t"):
             out.append(r.text or "")
         elif r.tag == w("tab"):
