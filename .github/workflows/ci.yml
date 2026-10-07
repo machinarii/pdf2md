@@ -30,7 +30,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
 
       - name: Byte-compile
-        run: python -m py_compile pdf2md_all.py structured.py
+        run: python -m py_compile pdf2md_all.py structured.py pdf2md_api.py
 
       # The single-file build inlines structured.py. A rename applied to one
       # copy and not the other once shipped a corrupted regex for months.
@@ -56,4 +56,4 @@ jobs:
       # F = pyflakes (undefined names, unused imports, dead locals),
       # E9 = syntax and IO errors. Deliberately not a style gate.
       - name: Static checks
-        run: ruff check --select F,E9 pdf2md_all.py structured.py tools tests
+        run: ruff check --select F,E9 pdf2md_all.py structured.py pdf2md_api.py tools tests

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Preserve DOCX/EPUB cell spans and explicit grouped headers with shared canonical
+  origin/covered-cell metadata; avoid treating short data rows as document metadata.
+- Translate a conservative OMML/MathML subset to inline LaTeX and retain unsupported
+  source expressions in optional math audits.
+- Add opt-in strict PDF coverage, bounded structured parsing, text-only image mode,
+  and an isolated Python API with byte-based format detection and timeouts.
+
 - Add PDF page coverage records, detected-table source crops and cell metadata,
   native span-preserving HTML, explicit grouped headers, and conservative table
   continuation joins.
