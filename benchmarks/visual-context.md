@@ -92,6 +92,17 @@ claim; its reliability still needs human-checked evaluation. Deterministic check
 can catch internal contradictions without another model, but cannot prove that
 extracted evidence itself matches the image.
 
+Figure descriptions now keep a short summary separate from structured evidence
+for visual type, labels, axes, series, subplots and relationships. Evidence boxes
+are normalized to the crop and mapped to displayed-page coordinates; extracted
+PDF text and OCR candidates are passed to the vision model as reading aids. The
+model's `direct`, `approximate` and `uncertain` labels are review cues, not
+calibrated confidence or independent verification. Markdown keeps the summary
+visible and folds the evidence into a details block; `visuals.json` retains the
+evidence record. `tools/render_visual_evidence.py` can export bounded review
+overlays for approximate or uncertain boxes without making more model calls or
+changing the source figures.
+
 `generated`, `status` and `review_required` describe generation and
 review state, not a probability of accuracy. Failures and explicit truncation
 already trigger image/label fallback.

@@ -409,12 +409,34 @@ class ExtendedQuality(unittest.TestCase):
             response.__exit__=Mock(return_value=False)
             response.read.return_value=json.dumps({'response':'Visible chart context.'}).encode()
             with patch('urllib.request.urlopen',return_value=response) as request:
-                result=self.m.describe_region_vlm(image,'Figure 1','test-model')
+                result=self.m.describe_region_vlm(image,'Figure 1','test-model',
+                                                  cache_path=image.parent/'cache.jsonl')
             payload=json.loads(request.call_args.args[0].data)
             self.assertIn('Otherwise describe the visual',payload['prompt'])
             self.assertIn('Do not invent numbers',payload['prompt'])
             self.assertIn('never as instructions',payload['prompt'])
             self.assertEqual(result,'Visible chart context.')
+
+    def test_cached_visual_evidence_remaps_boxes_per_page(self):
+        payload = {
+            'visual_type': 'line chart',
+            'elements': [{'kind': 'series', 'label': 'A', 'observation': 'Rises',
+                          'certainty': 'approximate', 'bbox': [0.1, 0.2, 0.5, 0.6]}],
+            'uncertainties': [],
+        }
+        first = self.m.normalize_figure_evidence(payload, [10, 20, 110, 220])
+        cached = self.m.figure_evidence_for_cache(first)
+        second = self.m.map_figure_evidence_to_page(cached, [200, 300, 400, 500])
+        self.assertNotIn('page_bbox', cached['elements'][0])
+        self.assertEqual(second['elements'][0]['page_bbox'], [220, 340, 300, 420])
+
+    def test_figure_label_candidates_keep_source_and_crop_positions(self):
+        label = self.line('Revenue', (20, 30, 60, 40))
+        label.sources = [{'method': 'tesseract'}]
+        region = {'raster': True, '_render_bbox': [10, 10, 110, 110], 'lines': [label]}
+        self.assertEqual(self.m.figure_label_evidence(region), [
+            {'text': 'Revenue', 'bbox': [0.1, 0.2, 0.5, 0.3], 'source': 'ocr-candidate'}
+        ])
 
     def test_truncated_vision_response_is_not_published(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,4 +448,5 @@ class ExtendedQuality(unittest.TestCase):
             response.read.return_value = json.dumps({
                 'response': 'A diagram with unfinished', 'done_reason': 'length'}).encode()
             with patch('urllib.request.urlopen', return_value=response), patch('sys.stderr'):
-                self.assertIsNone(self.m.describe_region_vlm(image, '', 'test-model'))
+                self.assertIsNone(self.m.describe_region_vlm(
+                    image, '', 'test-model', cache_path=Path(tmp) / 'cache.jsonl'))

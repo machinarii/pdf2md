@@ -18,8 +18,9 @@ CHECKS = {
     "heading_jump": (2, "Heading hierarchy skips a level"),
     "duplicate_heading": (2, "A heading repeats unusually often"),
     "standalone_page_number": (2, "Standalone page-number furniture remains"),
+    "broken_text_layer": (5, "Long word-like strings suggest lost spaces in the PDF text layer"),
     "possible_broken_hyphen": (2, "A word appears split across Markdown lines"),
-    "excess_blank_lines": (1, "Four or more consecutive blank lines"),
+    "excess_blank_lines": (1, "Two or more consecutive blank lines outside code fences"),
     "trailing_whitespace": (1, "Trailing whitespace remains"),
     "short_prose_fragment": (1, "Many short non-structural lines may be unreflowed"),
     "malformed_table": (2, "A pipe-table row has inconsistent cell counts"),
@@ -55,28 +56,75 @@ def inspect(path: Path) -> tuple[Counter, dict]:
             add(length_kind, text[:match.start()].count("\n") + 1, value)
 
     in_fence = False
+    blank_run = 0
+    blank_start = 0
     for i, line in enumerate(lines, 1):
         if line.lstrip().startswith("```"):
+            if not in_fence and blank_run >= 2:
+                add("excess_blank_lines", blank_start, f"{blank_run} consecutive blank lines")
+            blank_run = 0
             in_fence = not in_fence
+            continue
+        if not in_fence:
+            if not line.strip():
+                if not blank_run:
+                    blank_start = i
+                blank_run += 1
+            else:
+                if blank_run >= 2:
+                    add("excess_blank_lines", blank_start, f"{blank_run} consecutive blank lines")
+                blank_run = 0
         if "\ufffd" in line:
             add("replacement_chars", i, line)
         if any(0xE000 <= ord(c) <= 0xF8FF for c in line):
             add("private_use_chars", i, line)
-        if re.fullmatch(r"\s*\d{1,4}\s*", line):
+        if not in_fence and re.fullmatch(r"\s*\d{1,4}\s*", line):
             add("standalone_page_number", i, line)
         if not in_fence and line.rstrip() != line and not line.endswith("  "):
             add("trailing_whitespace", i, line)
-        if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]-$", line) and i < len(lines) and re.match(r"^[a-zà-öø-ÿ]", lines[i]):
+        if (not in_fence and re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]-$", line)
+                and i < len(lines) and re.match(r"^[a-zà-öø-ÿ]", lines[i])):
             add("possible_broken_hyphen", i, line + " / " + lines[i])
-    if re.search(r"\n[ \t]*\n(?:[ \t]*\n){2,}", text):
-        add("excess_blank_lines")
+    if blank_run >= 2:
+        add("excess_blank_lines", blank_start, f"{blank_run} consecutive blank lines")
     if sum(1 for line in lines if line.lstrip().startswith("```")) % 2:
         add("unclosed_fence")
+
+    content = lines
+    if lines and lines[0].strip() == "---":
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+        if end is not None:
+            content = lines[end + 1:]
+    plain = []
+    in_fence = False
+    for line in content:
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            plain.append(line)
+    prose_text = "\n".join(plain)
+    ascii_words = re.findall(r"[A-Za-z]{3,}", prose_text)
+    ascii_letters = sum(c.isascii() and c.isalpha() for c in prose_text)
+    if len(prose_text) >= 2000 and ascii_letters >= 0.4 * len(prose_text) and len(ascii_words) >= 200:
+        letter_count = sum(map(len, ascii_words)) or 1
+        runon_share = sum(len(word) for word in ascii_words if len(word) > 24) / letter_count
+        vowelless_share = (sum(not re.search(r"[aeiouyAEIOUY]", word) for word in ascii_words)
+                           / len(ascii_words))
+        if runon_share > 0.06 or (len(ascii_words) >= 300 and vowelless_share > 0.15):
+            add("broken_text_layer", 0,
+                f"{runon_share:.3f} of ASCII word characters are in words longer than 24 letters")
 
     headings = []
     heading_counts = Counter()
     previous = 0
+    in_fence = False
     for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
         if not match:
             continue
@@ -119,7 +167,15 @@ def inspect(path: Path) -> tuple[Counter, dict]:
                 add("broken_image_link", i, target)
 
     table_rows = []
+    in_fence = False
     for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            if in_fence and table_rows:
+                table_rows = []
+            continue
+        if in_fence:
+            continue
         if line.startswith("|") and line.endswith("|"):
             table_rows.append((i, line.count("|") - 1, line))
         elif table_rows:

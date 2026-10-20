@@ -228,6 +228,14 @@ class CoreRegressions(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
+    def test_final_markdown_spacing_collapses_blank_runs_but_preserves_code(self):
+        markdown = ("---\r\ntitle: Book  \r\n---\r\n\r\n \t\r\n\r\nBody  \r\n\r\n\r\n"
+                    "```python\r\nline  \r\n\r\n\r\n```\r\n\r\n")
+        self.assertEqual(
+            self.m.normalize_markdown_layout(markdown),
+            "---\ntitle: Book\n---\n\nBody  \n\n```python\nline  \n\n\n```\n",
+        )
+
     def test_rejected_ocr_glyphs_are_sanitized_before_rendering(self):
         line = self.m.Line(0, "\ue001 damaged \ufffd text", 0, 0, 100, 10, 10,
                            ("SubsetFont",), False, False, False, 0)

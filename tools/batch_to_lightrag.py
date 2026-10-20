@@ -95,6 +95,8 @@ def main() -> int:
                     help="keep recorded successes/skips but replace unrecorded existing output")
     ap.add_argument("--max-file-size-mb", type=float,
                     help="skip sources larger than this decimal megabyte limit")
+    ap.add_argument("--max-pages", type=int,
+                    help="skip PDFs longer than this many pages")
     args = ap.parse_args()
 
     source = args.source.resolve()
@@ -118,6 +120,7 @@ def main() -> int:
     successful = set()
     skipped_images = set()
     skipped_sizes = set()
+    skipped_pages = set()
     deduplicated = set()
     if records.exists():
         latest_records = {}
@@ -134,6 +137,8 @@ def main() -> int:
                 skipped_images.add(source_key)
             elif record.get("status") == "skipped_size":
                 skipped_sizes.add(source_key)
+            elif record.get("status") == "skipped_pages":
+                skipped_pages.add(source_key)
             elif record.get("status") == "deduplicated":
                 deduplicated.add(source_key)
 
@@ -160,6 +165,27 @@ def main() -> int:
             print(f"[{index}/{len(files)}] skip over {args.max_file_size_mb:g} MB: {relative}",
                   flush=True)
             continue
+        if args.max_pages is not None and path.suffix.lower() == ".pdf":
+            try:
+                import pymupdf
+                with pymupdf.open(path) as document:
+                    page_count = document.page_count
+            except Exception as exc:
+                page_count = None
+                print(f"[{index}/{len(files)}] cannot inspect page count for {relative}: {exc}",
+                      flush=True)
+            if page_count is not None and page_count > args.max_pages:
+                if output.exists():
+                    output.unlink()
+                if key not in skipped_pages:
+                    record = {"source": key, "output": relative_md.as_posix(),
+                              "status": "skipped_pages", "pages": page_count,
+                              "max_pages": args.max_pages, "timestamp": int(time.time())}
+                    with records.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+                print(f"[{index}/{len(files)}] skip over {args.max_pages} pages: {relative}",
+                      flush=True)
+                continue
         if not args.force and key in successful and output.is_file() and output.stat().st_size:
             continue
         if not args.force and key in skipped_images:

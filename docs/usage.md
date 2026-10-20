@@ -189,10 +189,25 @@ python3 pdf2md_all.py paper.pdf -o paper.md --figure-dir figures \
 
 Generated descriptions are visibly labeled in Markdown. `figures/visuals.json`
 records the model, page, displayed-page region coordinates, image filename/hash,
-caption, generated text, and whether the model returned a result. The same records
-are included in `document.json` when artifacts are enabled. Region boxes identify
-the figure; saved crops include a small surrounding margin. Each crop remains
-linked even when model inference fails, with extracted labels where available.
+caption, generated summary, structured visual evidence, source label candidates,
+and whether the model returned a result. Evidence includes localized boxes and
+review cues for uncertainty; these cues are not calibrated confidence. The same
+records are included in `document.json` when artifacts are enabled. Region boxes
+identify the figure; saved crops include a small surrounding margin. Each crop
+remains linked even when model inference fails, with extracted labels where
+available.
+
+To inspect approximate or uncertain evidence boxes, export numbered overlays
+and matching JSON sidecars without calling the vision model or changing source
+figures. The default limit is 500 images; use `--only` to narrow a large corpus.
+
+```bash
+python3 tools/render_visual_evidence.py /path/to/converted-books \
+  --output /tmp/visual-review --only charts
+```
+
+Red boxes mark uncertain evidence; amber boxes mark approximate evidence.
+Each sidecar maps the numbers to the model's observation and crop/page boxes.
 
 For RAG, keep generated visual context distinct from source transcription and
 carry the image/page provenance into retrieved chunks. Review exact numbers and

@@ -426,6 +426,71 @@ class PDFQuality(unittest.TestCase):
         share, why = self.m.broken_text_layer(symbols)
         self.assertIn('not letters', why)
 
+    def test_shorter_runon_layer_is_detected(self):
+        text = ' '.join(['transformationoperationdevelopment'] * 60
+                        + ['relationship'] * 213)
+        result = self.m.broken_text_layer([self.line(text)])
+        self.assertIsNotNone(result)
+        self.assertIn('run together', result[1])
+
+    def test_broken_text_page_uses_only_verified_ocr_replacement(self):
+        with pymupdf.open() as doc:
+            doc.new_page(width=600, height=800)
+            broken = ' '.join(['transformationoperationdevelopment'] * 60
+                              + ['relationship'] * 213)
+            lines = [self.line(broken, y=100)]
+
+            def readable_backend(page, bbox, language='eng', line_mode=False):
+                text = ('The recovered page contains readable words and useful detail '
+                        'for anyone following the argument.')
+                recognized = [
+                    {'text': text, 'bbox': [30, 20 + i * 18, 570, 32 + i * 18],
+                     'confidence': 96}
+                    for i in range(30)
+                ]
+                return recognized, 96
+
+            audit = self.m.ocr_broken_text_pages(doc, lines, [0], backend=readable_backend)
+            self.assertEqual(audit[0]['status'], 'accepted')
+            self.assertEqual(len(lines), 30)
+            self.assertTrue(all('readable words' in line.text for line in lines))
+
+    def test_broken_text_page_keeps_native_when_ocr_is_still_corrupt(self):
+        with pymupdf.open() as doc:
+            doc.new_page(width=600, height=800)
+            broken = ' '.join(['transformationoperationdevelopment'] * 60
+                              + ['relationship'] * 213)
+            lines = [self.line(broken, y=100)]
+
+            def corrupt_backend(page, bbox, language='eng', line_mode=False):
+                recognized = [{'text': broken, 'bbox': [30, 20, 570, 32],
+                               'confidence': 96}]
+                return recognized, 96
+
+            audit = self.m.ocr_broken_text_pages(doc, lines, [0], backend=corrupt_backend)
+            self.assertEqual(audit[0]['status'], 'rejected')
+            self.assertEqual(lines[0].text, broken)
+
+    def test_broken_text_page_accepts_readable_ocr_when_spaces_restore_text(self):
+        with pymupdf.open() as doc:
+            doc.new_page(width=600, height=800)
+            broken = ' '.join(['transformationoperationdevelopment'] * 40)
+            lines = [self.line(broken, y=100)]
+
+            def readable_backend(page, bbox, language='eng', line_mode=False):
+                recognized = [
+                    {'text': 'recognized readable text from scanned page ' * 7,
+                     'bbox': [30, 20 + i * 5, 570, 32 + i * 5], 'confidence': 96}
+                    for i in range(30)
+                ]
+                return recognized, 96
+
+            audit = self.m.ocr_broken_text_pages(doc, lines, [0], backend=readable_backend)
+            self.assertGreater(audit[0]['candidate_characters'],
+                               2 * audit[0]['original_characters'])
+            self.assertEqual(audit[0]['status'], 'accepted')
+            self.assertTrue(all('recognized readable text' in line.text for line in lines))
+
     def test_broken_text_layer_warns_but_still_converts(self):
         with tempfile.TemporaryDirectory() as tmp:
             src, out = Path(tmp) / 'cipher.pdf', Path(tmp) / 'cipher.md'
