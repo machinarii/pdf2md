@@ -1,1 +1,1 @@
-pymupdf>=1.24
+pymupdf>=1.24,<2
